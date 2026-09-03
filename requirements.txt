@@ -1,0 +1,17 @@
+beautifulsoup4>=4.12
+lxml>=5.0
+pandas>=2.2
+scikit-learn>=1.5
+sentence-transformers>=3.0
+faiss-cpu>=1.8
+networkx>=3.3
+pyvis>=0.3.2
+pgpy>=0.6.0
+base58>=2.1
+requests>=2.32
+streamlit>=1.38
+reportlab>=4.2
+matplotlib>=3.9
+pytest>=8.0
+scipy>=1.14
+pyyaml>=6.0

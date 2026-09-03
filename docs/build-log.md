@@ -27,6 +27,23 @@ Copy this block for each prompt:
 
 ## Log
 
+### 2026-09-03 — prompts/00-project-scaffold.md
+
+- **Status:** complete
+- **Profile:** dev (schema init only; no pipeline run)
+- **What shipped:** Full `src/` package tree (`ingest` … `ui`, `opsec/demo_target/`), `tests/`, `data/raw|db|cache/ct/`, `.gitignore`, `requirements.txt` (core stack only), `config.yaml` (dev/demo profiles), `src/ingest/schema.py`, `README.md`.
+- **DoD:**
+  - `pip install -r requirements.txt` in fresh `.venv` → **pass** (Python 3.13.9 on this machine; spec targets 3.11+)
+  - Schema init creates 7 tables with lineage + `case_id` on `pair_scores` → **pass**
+  - Second schema init idempotent → **pass**
+  - `config.yaml` dev `neo4j.enabled: false`, demo `neo4j.enabled: true` → **pass**
+  - Directory tree + `__init__.py` in every `src/` subpackage → **pass**
+  - `data/`, `.venv`, `__pycache__` gitignored → **pass** (`data/db/attrib.sqlite` not tracked)
+- **Tests:** none required this prompt (`tests/__init__.py` only)
+- **Metrics:** 7 tables; `posts` has 19 columns including `raw_html` + 4 lineage fields; `pair_scores` has `case_id` in PK
+- **Issues / near-misses:** Added `pyyaml>=6.0` to `requirements.txt` (needed by schema CLI; not listed explicitly in SPEC §20 but required for `config.yaml`). Dev machine used Python 3.13.9 instead of 3.11 — install succeeded; team should still standardize on 3.11 per SPEC if wheel issues appear elsewhere.
+- **Judge/interview notes:** Scaffold separates corpus tables from case-scoped results from day one — later prompts don't retrofit investigation semantics.
+
 ### 2026-09-03 — brand: SUTRANETRA (not a build prompt)
 
 - **Status:** complete

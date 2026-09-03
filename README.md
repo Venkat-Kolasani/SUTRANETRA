@@ -1,0 +1,37 @@
+# SUTRANETRA
+
+**Sutra** = thread / connection · **Netra** = eye / vision
+
+*"The eye that follows the hidden threads."*
+
+SUTRANETRA attributes pseudonymous dark-web marketplace actors to real-world infrastructure for SIH26151 (NTRO). The system has three layers:
+
+1. **Correlation** — which aliases are probably the same actor (stylometry, hard evidence, graph).
+2. **Attribution** — which actors leak infrastructure that can lead investigators outward (OpSec scanning, Certificate Transparency pivoting).
+3. **Evidence / Investigation** — why an investigator should believe a result, what was observed, and what to check next (explanations, Evidence Trail, exports, read-only query).
+
+## Legal and ethical scope
+
+- We do not interact with live criminal infrastructure: no Tor scraping, no third-party hidden services.
+- The corpus is historical and public (Darknet Market Archives on archive.org, defunct markets circa 2013–2015).
+- The only hidden service scanned in this project is one we run locally, deliberately misconfigured for demonstration.
+- Certificate Transparency data is public by design.
+- Intended use is law-enforcement attribution research for NTRO.
+- Wallets, PGP fingerprints, and handles are reported as **pseudonymous identifiers with confidence scores**, not identity verdicts.
+
+## Quick start
+
+Requires **Python 3.11+** (3.12 acceptable).
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m src.ingest.schema
+```
+
+This creates `data/db/attrib.sqlite` with the full corpus + cases schema (`posts`, `aliases`, `evidence`, `cases`, `pair_scores`, `clusters`, `opsec_findings`). Re-running the command is safe (idempotent).
+
+Configuration lives in `config.yaml` (`dev` profile by default: Neo4j and LLM polish off).
+
+Full technical specification: `SPEC.md`.

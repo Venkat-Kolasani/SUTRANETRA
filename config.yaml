@@ -1,0 +1,50 @@
+# SUTRANETRA — default profile is dev (no Neo4j, no LLM polish required).
+# Override: SUTRANETRA_PROFILE=demo or --profile demo on CLI (later prompts).
+
+profile: dev
+
+paths:
+  data_raw: data/raw
+  sqlite_db: data/db/attrib.sqlite
+  ct_cache: data/cache/ct
+
+markets:
+  - cannabisroad3
+  - nucleus
+  - silkroad1
+  - silkroad2
+  - agora
+  - evolution
+  - thehub
+
+fusion:
+  confidence_threshold: 0.83
+
+stylometry:
+  char_ngram_min_df: 3
+  char_ngram_max_features: 200000
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  blocking_top_k: 50
+
+llm_model: qwen2.5:7b
+
+profiles:
+  dev:
+    neo4j:
+      enabled: false
+      uri: bolt://localhost:7687
+      user: neo4j
+      password: ""
+      database: neo4j
+    llm:
+      enabled: false
+
+  demo:
+    neo4j:
+      enabled: true
+      uri: bolt://localhost:7687
+      user: neo4j
+      password: ""
+      database: neo4j
+    llm:
+      enabled: true
