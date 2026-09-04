@@ -168,3 +168,19 @@ Copy this block for each prompt:
   - Positives 2075 ≫ 30; TheHub already ingested; **temporal-split fallback not used**.
 - **Tests:** `tests/test_labels.py` **3 passed** (Nightcrawler fixture `label=1`; hard-neg never shares evidence; corpus `Jack N Hoff` SR1+SR2 in `label_pairs`).
 - **Judge/interview notes:** Same handle is a heuristic, not identity. No planted positives. `Jack N Hoff` is a real recurring handle.
+
+### 2026-09-04 — prompts/05-stylometry-char-ngram-blocking.md
+
+- **Status:** complete
+- **Profile:** dev
+- **What shipped:** `src/stylometry/hygiene.py`, `redact.py`, `char_ngram.py`, `blocking.py`. CLI `python -m src.stylometry.char_ngram`. Staging table `char_candidates` (neighbors ∪ eval only). `config.yaml` `blocking_svd_dims: 256`.
+- **DoD:**
+  - Vocab size **200,000** (hit `max_features` cap) → **pass**
+  - Sanity S_char: `Jack N Hoff` SR1/SR2 **0.516**; random_neg `Mwhite`/`Skittles4` **0.065** (same direction as mean pos 0.183 vs mean random_neg 0.082) → **pass**
+  - Candidate union **18,347,050** vs full **1,218,032,046** pairs (49,357 aliases). Persisted TF-IDF scores: **2,257,292** (2,251,456 neighbor + 6,225 eval). Reduction vs N² is ~66× for the union, ~540× for neighbours-only.
+  - Blocking recall **forced = 1.0** (2075/2075). **Neighbors-only (honest) = 0.155** (321/2075). Do not quote 1.0 on stage without the 0.155.
+  - Hygiene: cannabisroad3 `msg_id=4130` — quoted “epi pen” / “Whole Foods mango bin” absent; own line “sister has the same problem with mangos” kept; signature email stripped → **pass**
+- **Tests:** `test_redaction.py` 2 passed; `test_hygiene.py` 1 passed; `test_blocking.py` 1 passed (**4 passed**).
+- **Issues / near-misses:** Shared forum onions (`silkroadvb5piz3r.onion` on 4,224 aliases) make hard-evidence combinations ~16M extra pairs. First persist of that union onto iCloud SQLite stalled; those clique pairs are counted in the union/recall stats but **not** stored. `S_char` in `char_candidates` is full TF-IDF cosine for neighbors ∪ eval. Honest blocking recall is low because same-username cross-market positives are often not stylometric near-duplicates — that is why force-include exists.
+- **Judge/interview notes:** Char n-grams are the topic-robust channel. Blind protocol is `redact.py` (handle + separators + leet + digit suffix), not dropping the label column. Report both blocking recalls.
+
