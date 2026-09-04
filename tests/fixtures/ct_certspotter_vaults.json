@@ -1,0 +1,8 @@
+[
+  {
+    "id": 3,
+    "dns_names": ["vaults.erowid.org", "images.erowid.org"],
+    "pubkey_sha256": "leafkey222",
+    "issuer": {"name": "C=US, O=Let's Encrypt"}
+  }
+]

@@ -235,5 +235,21 @@ Copy this block for each prompt:
 - **Issues / near-misses:** Cluster 1 is a **122-member component at 0.83**, not a tight 3-alias actor. Threshold was not lowered. Shared onions include forum-wide hosts (same class as Prompt 05 `silkroadvb5piz3r.onion` on thousands of aliases) — do not pitch those as private keys. Agora/Evolution 3-market story is not in this corpus; the real 3-span is SR1/SR2/TheHub.
 - **Judge/interview notes:** `market:alias` nodes. Centrality is structural. HTML is the offline demo visual; Neo4j Browser is later.
 
+### 2026-09-05 — prompts/09-opsec-leak-scanner.md
+
+- **Status:** complete
+- **Profile:** dev (CT live used once to seed cache; replay is cache-first. No Neo4j.)
+- **What shipped:** localhost demo target (`src/opsec/demo_target/`, stdlib `http.server` not Flask), detectors in `src/opsec/scanner.py`, CT pivot `src/opsec/ct_pivot.py`, local Tor HS helper `tor_hs.py`. Findings persist to `opsec_findings` under `--case-id`.
+- **Commands:** pytest `test_scanner.py` `test_ct_pivot.py` `test_cases.py`; curl of each planted path on `127.0.0.1:8080`; scanner `--target/--tls-target/--corpus`; `ct_pivot --domain erowid.org --live` then without `--live`; Tor Expert/Homebrew `tor` HS on SOCKS 19050.
+- **DoD:**
+  - Own HS reachable: **`rag6gxylovjpz4licuykp2pptt3rybjghniy4lmo5p4h2c3fl44xovyd.onion`** via SOCKS `127.0.0.1:19050` → HTTP 200, planted `erowid.org` img/css in body (400 bytes). Backend also verified with curl on localhost (each planted path). Tor DataDirectory in `/tmp/sutranetra-tor` because iCloud `data/tor/hs` was too permissive for Tor.
+  - Scanner vs demo (actual): `clearnet_ref=erowid.org`; `server_status=demo-host.sutranetra.invalid`; `git_config=https://github.com/Venkat-Kolasani/SUTRANETRA.git`; `env_leak=/.env`; `backup_leak=/backup.zip`; `config_bak=/config.php.bak`; `dir_listing=/files/`; `server_header=Apache/2.4.41 (Ubuntu)`; `x_powered_by=PHP/7.4.3`; `default_page=/it-works` (Welcome to nginx!); `tls_san=erowid.org` (supporting detector, not headline).
+  - Corpus `***clearnet***` leak (not the demo): **dangerousminds.net** on cannabisroad3 `msg_id=4111` alias `AngelEyes` · `cannabisroad3-forums.tar.xz` / `2014-11-25` / `cannabisroad3-forums/2014-11-25/index.php?topic=440.0` / sha256 `886c4ef27035ad25a1928cc1ac15ab20565b7f9771932884ae3314ef20cfb545`.
+  - CT pivot `erowid.org`: live Cert Spotter **8 issuances**, sibling **`archive.erowid.org`**, 8 `pubkey_sha256` values; cache `data/cache/ct/7103f029….json`. Second run **`source=cache`** (hop `archive.erowid.org` also cache). Chain: plant clearnet img → detect `erowid.org` → pivot → `archive.erowid.org`.
+  - `opsec_findings` **CASE-2026-001**: **68 rows** (11 demo kinds + 56 `corpus_clearnet` + 1 `ct_sibling=archive.erowid.org`). **CASE-2026-002: 0**.
+- **Tests:** `test_scanner.py` 1, `test_ct_pivot.py` 2 (fixture, no network), `test_cases.py` 3 including case-scoped OpSec write → **6 passed in 0.75s**.
+- **Issues / near-misses:** Did not add Flask (prompt allows equivalent). Tor HS keys live in `/tmp`, not git. Unauthenticated Cert Spotter used for the one `--live` seed; later demo must replay cache. TLS-SAN is implemented but must not lead the pitch. Dual `Server:` lines (Python BaseHTTP + planted Apache) — detector reports the planted Apache value.
+- **Judge/interview notes:** Headline path is clearnet HTML resource → CT sibling domains. We never scanned a third-party hidden service.
+
 
 

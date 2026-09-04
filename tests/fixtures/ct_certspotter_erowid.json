@@ -1,0 +1,19 @@
+[
+  {
+    "id": 1,
+    "tbs_sha256": "aaa",
+    "cert_sha256": "bbb",
+    "dns_names": ["erowid.org", "www.erowid.org", "vaults.erowid.org"],
+    "pubkey_sha256": "leafkey111",
+    "issuer": {"name": "C=US, O=Let's Encrypt", "friendly_name": "Let's Encrypt", "pubkey_sha256": "issuerkey"},
+    "not_before": "2020-01-01T00:00:00Z",
+    "not_after": "2021-01-01T00:00:00Z",
+    "revoked": false
+  },
+  {
+    "id": 2,
+    "dns_names": ["erowid.org", "cdn.erowid.org"],
+    "pubkey_sha256": "leafkey111",
+    "issuer": {"name": "C=US, O=Let's Encrypt", "pubkey_sha256": "issuerkey"}
+  }
+]

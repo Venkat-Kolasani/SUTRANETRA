@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from src.ingest.schema import init_db
+from src.opsec.scanner import list_findings, persist_findings
 from src.pipeline.case import config_hash, create_case, get_case, set_status
 
 CFG = {
@@ -40,6 +41,21 @@ def test_two_cases_do_not_clobber(tmp_path: Path):
     set_status(db, "CASE-A", "complete")
     assert get_case(db, "CASE-A")["status"] == "complete"
     assert get_case(db, "CASE-B")["status"] == "created"
+
+
+def test_opsec_findings_are_case_scoped(tmp_path: Path):
+    db = tmp_path / "c.sqlite"
+    init_db(db)
+    create_case(db, CFG, case_id="CASE-A", threshold=0.83)
+    create_case(db, CFG, case_id="CASE-B", threshold=0.70)
+    persist_findings(
+        db,
+        "CASE-A",
+        "http://127.0.0.1:8080",
+        [{"finding_kind": "clearnet_ref", "value": "erowid.org", "detail": "img"}],
+    )
+    assert [r["value"] for r in list_findings(db, "CASE-A")] == ["erowid.org"]
+    assert list_findings(db, "CASE-B") == []
 
 
 def test_config_hash_ignores_paths():
