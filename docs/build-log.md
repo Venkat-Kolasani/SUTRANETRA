@@ -215,5 +215,25 @@ Copy this block for each prompt:
 - **Issues / near-misses:** Feature vector is 6-D (spec §10 lists 5 plus Prompt 07 `time_missing`). Test split is denser in positives than the 2.26M candidate pool because mixed pairs drop. Do not quote 0.83-threshold recall as “the system finds 1.5% of matches in production.”
 - **Judge/interview notes:** Confidence is learned, not hand-tuned. Heuristic exists and is worse. Same-handle labels are still a heuristic (Prompt 04 caveat).
 
+### 2026-09-05 — prompts/08-graph-build.md
+
+- **Status:** complete
+- **Profile:** dev (networkx + pyvis only; Neo4j is Prompt 14)
+- **What shipped:** `src/graph/build.py` (case-scoped `pair_scores` → `market:alias` graph, components → `clusters`, degree/betweenness, shared evidence with post lineage, pyvis HTML). CLI `python -m src.graph.build --case-id CASE-2026-001`. Render `docs/eval/CASE-2026-001_graph.html`.
+- **Commands:** `.venv/bin/python -m pytest tests/test_graph.py -q`; `.venv/bin/python -m src.graph.build --case-id CASE-2026-001`. Did not re-run the full graph build for close-out. Lineage was queried afterward via `shared_evidence_with_lineage` (CLI JSON was truncated at 8k chars). HTML inspected as source text, not in a browser.
+- **DoD:**
+  - Graph @ threshold **0.83**: **n_nodes=375**, **n_edges=531**, **n_components=90** → **pass**
+  - `clusters` rows **375**, matches node count → **pass**
+  - 3-market component: **cluster_id 1**, **122 members**, markets **silkroad1 + silkroad2 + thehub** (not Agora/Evolution — those markets were not ingested). Date range **2011-06-18 13:10:00** … **2014-04-20 17:48:26**, **n_posts=69891**. Structural core **silkroad1:blackend646** (betweenness **0.0286**, degree centrality **0.0267**) — graph observation, not an identity claim.
+  - Shared hard evidence (top hits, with lineage; `MIN()` lineage is one witnessing post per `(kind,value)`, not every post):
+    - onion `dkn255hz262ypmii.onion` n_aliases=109 · `silkroad1-forums.tar.xz` / `2013-11-03` / `silkroad1-forums/2013-11-03/index.php?topic=10004.0` / sha256 `000897824ea94d40386179b94ba56629c93355438c6e20bba0aa7ccf318f41ca`
+    - onion `silkroadvb5piz3r.onion` n_aliases=104 · same archive / `2013-11-03` / `…/index.php?topic=100167.0` / sha256 `001a7edb11fd5633e9946dbd554c5f77f13e905b5db3991a204059191a7de0a8`
+    - clearnet `youtube.com` n_aliases=58 · `…/index.php?topic=100044.msg704491` / sha256 `0082d29c40081fb85b18b362cd41d128526b7e7e80a2d66f1a91f99ed9ac95dd`
+  - HTML exists (150453 bytes). Cross-market edges `#d35400` (38 occurrences) vs same-market `#5d6d7e` (493). Physics: `toggle_physics(False)`, per-node `physics: false`, options `"enabled": false`. No live browser open in this close-out.
+  - `src/graph/build.py` has no neo4j/langgraph/langchain imports. Environment: **neo4j / langgraph / langchain not installed** → **pass**
+- **Tests:** `tests/test_graph.py` **2 passed in 0.12s** (known 3-alias component + loner; betweenness higher on the path bridge).
+- **Issues / near-misses:** Cluster 1 is a **122-member component at 0.83**, not a tight 3-alias actor. Threshold was not lowered. Shared onions include forum-wide hosts (same class as Prompt 05 `silkroadvb5piz3r.onion` on thousands of aliases) — do not pitch those as private keys. Agora/Evolution 3-market story is not in this corpus; the real 3-span is SR1/SR2/TheHub.
+- **Judge/interview notes:** `market:alias` nodes. Centrality is structural. HTML is the offline demo visual; Neo4j Browser is later.
+
 
 
