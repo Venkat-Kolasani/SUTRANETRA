@@ -19,7 +19,7 @@ BARE_DOMAIN_RE = re.compile(
 )
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b", re.I)
 OBFUSCATED_EMAIL_RE = re.compile(
-    r"\b([A-Z0-9._%+\-]+)\s*(?:\[at\]|\(at\)|@)\s*([A-Z0-9.\-]+)\s*(?:\[dot\]|\(dot\)|\.)\s*([A-Z]{2,})\b",
+    r"\b([A-Z0-9._%+\-]+)\s*(?:\[at\]|\(at\))\s*([A-Z0-9.\-]+)\s*(?:\[dot\]|\(dot\))\s*([A-Z]{2,})\b",
     re.I,
 )
 
@@ -27,6 +27,7 @@ _FILE_TLDS = frozenset(
     "png jpg jpeg gif webp svg css js html htm php asp aspx pdf zip tar gz txt exe".split()
 )
 _SKIP_DOMAINS = frozenset({"localhost", "example.com", "example.org", "example.net"})
+_SKIP_TLDS = frozenset("this that with from have will them they your here".split())
 
 
 def _ctx(text: str, start: int, end: int) -> str:
@@ -48,7 +49,7 @@ def _clean_domain(host: str) -> str | None:
     if not host or host.endswith(".onion") or host in _SKIP_DOMAINS:
         return None
     tld = host.rsplit(".", 1)[-1]
-    if tld in _FILE_TLDS:
+    if tld in _FILE_TLDS or tld in _SKIP_TLDS:
         return None
     if host.count(".") < 1:
         return None
@@ -71,7 +72,10 @@ def extract_contacts(text: str) -> list[dict]:
         _add(out, seen, "email", email, text, m.start(), m.end())
 
     for m in URL_RE.finditer(text):
-        parsed = urlparse(m.group(0))
+        try:
+            parsed = urlparse(m.group(0))
+        except ValueError:
+            continue
         host = _clean_domain(parsed.hostname or "")
         if host:
             _add(out, seen, "clearnet", host, text, m.start(), m.end())

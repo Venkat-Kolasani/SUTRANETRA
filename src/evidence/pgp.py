@@ -14,6 +14,11 @@ if "imghdr" not in sys.modules:
     sys.modules["imghdr"] = _imghdr
 
 from pgpy import PGPKey, PGPMessage  # noqa: E402
+import warnings
+
+warnings.filterwarnings("ignore", message="Incorrect crc24")
+warnings.filterwarnings("ignore", message="Discarded unexpected packet")
+warnings.filterwarnings("ignore", message="Warning: Orphaned packet")
 
 from src.evidence.htmltext import html_to_text
 
@@ -82,7 +87,11 @@ def extract_pgp(text: str) -> list[dict]:
 
     def add(value: str, start: int, end: int, note: str = "") -> None:
         value = _norm_fpr(value)
-        if not value or value in seen:
+        if not value or value == "NONE":
+            return
+        if not re.fullmatch(r"[0-9A-F]{8}|[0-9A-F]{16}|[0-9A-F]{40}", value):
+            return
+        if value in seen:
             return
         seen.add(value)
         row = {

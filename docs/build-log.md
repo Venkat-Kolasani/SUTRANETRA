@@ -87,16 +87,18 @@ Copy this block for each prompt:
 
 ### 2026-09-03 — prompts/03-evidence-extraction.md
 
-- **Status:** partial (code + unit tests; full-corpus extract blocked on Prompt 02 ingest)
+- **Status:** complete (dev; full-corpus extract after Prompt 02 freeze)
 - **Profile:** dev
-- **What shipped:** `src/evidence/{pgp,crypto_addr,onion,extract,score,htmltext}.py`; fixture `tests/fixtures/pgp_trappy_msg1596.asc` (cannabisroad3 msg 1596 / Trappy).
+- **What shipped:** `src/evidence/{pgp,crypto_addr,onion,extract,score,htmltext}.py`; CLI `python -m src.evidence.extract`. Contacts taken from stripped `body` so forum chrome is not an onion hit on every post. PGP from unescaped HTML. Invalid IPv6 URLs skipped. Fallback fingerprints must be 8/16/40 hex; `NONE` dropped. Obfuscated email requires `[at]`/`[dot]`, not bare `@` (that was turning `Thanks @copycat. This` into a fake address).
 - **DoD:**
-  - evidence populated across full corpus → **not run** (Silk Road 1 ingest still in progress; did not write `evidence` on the live DB)
-  - per-kind counts / 10-row spot-check / multi-alias shared PGP or wallet → **pending** full extract
-  - shared-evidence score: one PGP → **0.875** (`1 - 0.5^3`, spec ~0.88); empty pair → **0** → **pass** (unit)
-- **Tests:** `test_crypto_addr.py` 3 passed (4 real CR3 addresses valid; MD5 `16936e5adb8a36cbb21d38beeb6f8e11` and short `3y4kBQhzP5dPh1AiMhNWU7HKLB3` rejected); `test_pgp.py` 5 passed (fingerprint `74D0519647C44BCBC03A182421819BFFDB3D03BC`); `test_evidence_extract.py` 2 passed (`dangerousminds.net` from topic 440). **10 passed in 0.11s**
-- **Issues / near-misses:** `pgpy` imports removed-stdlib `imghdr` on Python 3.13 — stubbed in `pgp.py`. ~6 CR3 pubkey blocks fail `PGPKey.from_blob` (scrape-mangled armor); fallback keeps Key ID rather than dropping. Keccak-256 for Monero is local (hashlib SHA3 is the wrong padding).
-- **Judge/interview notes:** Regex-only BTC is the credibility trap; the unit test is the proof, not the extractor existing.
+  - evidence populated, kinds present: **pgp_fpr, btc, onion, clearnet, email**. **xmr: none** in this corpus.
+  - Counts (912,511 posts scanned, 0 extract failures, ~169s): pgp_fpr **10,043**; btc **2,646**; onion **45,381**; clearnet **66,499**; email **3,764**; total **128,333**
+  - 10-row spot-check: PGP (Trappy `74D05196…` etc.) and BTC (1JoLLy5…, 1CatnMd3…, checksum-valid) genuine. Onion samples are vendor/market links in post text. Email samples after filter are real (riseup/safe-mail/tightmail). Clearnet: youtube, blockchain.info, rollitup.org genuine; leftover noise still possible on odd TLDs (`mt.gox` is a real historical domain).
+  - Multi-alias shared PGP: `D870C6ACCC6E46B0E0C73955B8F1D88EBBF7433B` on **75** aliases. Shared BTC: `1Hq6xxFFEFdzuQHtrx8GPQf7NGE6g287oX` on **16** aliases.
+  - S_hard one PGP: **0.875**; empty: **0**
+- **Tests:** `test_crypto_addr.py` + `test_pgp.py` + extract/clearnet extras → **10 passed in 0.15s**
+- **PGP rate sanity:** CR3 **16** posts with PGP / 4,764 posts. Spec's 23/654 was **pages**, not posts — same order, not 100× off.
+- **Judge/interview notes:** Regex-only BTC is the trap; the unit test rejects the MD5 false positive. Shared PGP across 75 aliases includes likely quoted keys / copy-paste, not 75 secret identities — fusion still needs stylometry. Onion counts are dominated by `silkroadvb5piz3r.onion` mentions in SR1 bodies.
 
 ### 2026-09-04 — Prompt 02 market cut (throughput)
 
