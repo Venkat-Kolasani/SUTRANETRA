@@ -184,3 +184,18 @@ Copy this block for each prompt:
 - **Issues / near-misses:** Shared forum onions (`silkroadvb5piz3r.onion` on 4,224 aliases) make hard-evidence combinations ~16M extra pairs. First persist of that union onto iCloud SQLite stalled; those clique pairs are counted in the union/recall stats but **not** stored. `S_char` in `char_candidates` is full TF-IDF cosine for neighbors ∪ eval. Honest blocking recall is low because same-username cross-market positives are often not stylometric near-duplicates — that is why force-include exists.
 - **Judge/interview notes:** Char n-grams are the topic-robust channel. Blind protocol is `redact.py` (handle + separators + leet + digit suffix), not dropping the label column. Report both blocking recalls.
 
+### 2026-09-05 — prompts/06-stylometry-embeddings-temporal.md
+
+- **Status:** complete
+- **Profile:** dev
+- **What shipped:** `src/stylometry/embed.py` (MiniLM CPU, batch 64, cap 200 posts/alias, Prompt 05 hygiene+redact), `src/temporal/activity.py` (hour/dow hists, JS S_time, weak TZ). Scores in `pair_channel_scores`; TZ in `alias_activity`. CLIs: `python -m src.stylometry.embed`, `python -m src.temporal.activity`.
+- **DoD:**
+  - Embed runtime **7881 s (~2.2 h)** for **48,848** aliases / **758,314** capped posts; **2,257,292** candidate pairs scored. **2,231,208** rows have non-NULL `s_embed` (empty-doc aliases stay NULL).
+  - Prompt 05 pair `Jack N Hoff` SR1/SR2: **s_char=0.516, s_embed=0.876**. Random_neg `Mwhite`/`Skittles4`: **s_char=0.065, s_embed=0.242**. Constructed cannabis casual-vs-formal pair (unit test): MiniLM topic score **>** char style score by ≥0.15 with topic >0.45 → **pass** (channels diverge). Naive corpus `s_embed≈1 / s_char≈0` hits are thin/garbled aliases (e.g. `martin420` n_posts=2) — do not use those as the demo pair.
+  - `S_time`: eligible aliases **10,027**; NULL floor **38,981**. Pair scores: **399,995** numeric, **1,857,297** NULL. Samples: AfriKanSun/SmileCrew **0.421** (n_ts 93/58); AfriKanSun/microbabe **0.437**; AfriKanSun/mushitup **0.466**. NULL path: `0shit`@cannabisroad3 n_ts=1.
+  - TZ (weak, not a location claim): `ohluckyman`@silkroad1 R=1.00 on 23 ts, UTC mass ~11h → evening-peak hypothesis UTC+9, East Asia/Australia band. `Kublai_Khan`@silkroad2 R=1.00 on 23 ts, UTC mass ~5h → UTC−9, Americas Pacific/Alaska band.
+- **Tests:** `test_temporal.py` 3 passed; `test_embed_vs_char.py` 1 passed (MiniLM). Combined with Prompt 05 tests 8 passed when MiniLM is run in a separate pytest process (one in-process suite hit a torch segfault after the long embed job).
+- **Issues / near-misses:** CPU MiniLM at batch 64 was ~100 posts/s. `S_embed=1.0` with `s_char=0` on 1–2 post aliases is vector collapse, not a two-channel success. `S_time=1.0` on ORDER BY DESC is identical hour histograms, not a demo highlight — use mid-range pairs. Missing `S_time` is SQL NULL, never 0. Fusion (Prompt 07) must impute + `time_missing`.
+- **Judge/interview notes:** `S_embed` is topic/domain proximity, never style. Char n-grams are the style channel. Timezone is an evening-peak UTC-offset *hypothesis* with concentration R as confidence.
+
+

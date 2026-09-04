@@ -32,6 +32,8 @@ stylometry:
   embedding_model: sentence-transformers/all-MiniLM-L6-v2
   blocking_top_k: 50
   blocking_svd_dims: 256
+  embed_max_posts: 200
+  embed_batch_size: 64
 
 llm_model: qwen2.5:7b
 
