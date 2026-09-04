@@ -154,3 +154,17 @@ Copy this block for each prompt:
 - **Tests:** `test_smf_parser.py` (incl. silkroad1 fixture), `test_phpbb_parser.py`, `test_dedupe.py`, `test_post_provenance.py`, `test_multi_market_load.py` → **8 passed in 0.42s**
 - **Aliases table:** 49,357 rows. **1,643** aliases appear on 2+ markets.
 - **Judge/interview notes:** We did not hit 1M unique posts. We hit 5 markets and the signals that matter (SR1→SR2 migration corpus, TheHub overlap). Do not say 1M on stage.
+
+### 2026-09-04 — prompts/04-ground-truth-labels.md
+
+- **Status:** complete
+- **Profile:** dev
+- **What shipped:** `src/fusion/labels.py` → staging table `label_pairs` (not `pair_scores`; no case yet). CLI `python -m src.fusion.labels`. §11.3 caveat in the module docstring. Blind-protocol note: this module does not vectorize; Prompts 05–06 must redact alias strings.
+- **DoD:**
+  - Positives (same username, ≥2 markets): **2,075**. Spans: SR1|SR2 1027, SR2|TheHub 338, SR1|TheHub 212, nucleus|SR1 169, nucleus|SR2 110, CR3|SR1 65, nucleus|TheHub 57, CR3|TheHub 38, CR3|SR2 32, CR3|nucleus 27.
+  - Random cross-market negatives: **2,075**. Hard negatives (same market, shared thread_id, no shared evidence): **2,075**.
+  - 5 positives inspected: `007`, `03welle`, `0woorrdd` on SR1+SR2; `0x00` SR1+TheHub; `1200mics` SR2+TheHub — same alias string on both markets with post counts.
+  - 3 hard negs: silkroad1 `590nm`/`midlandsmafia`, `flow378`/`tropicalis`, `CT`/`phrost70` — co_threads=1, shared_ev=0.
+  - Positives 2075 ≫ 30; TheHub already ingested; **temporal-split fallback not used**.
+- **Tests:** `tests/test_labels.py` **3 passed** (Nightcrawler fixture `label=1`; hard-neg never shares evidence; corpus `Jack N Hoff` SR1+SR2 in `label_pairs`).
+- **Judge/interview notes:** Same handle is a heuristic, not identity. No planted positives. `Jack N Hoff` is a real recurring handle.
