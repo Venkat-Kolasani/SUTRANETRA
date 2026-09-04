@@ -8,14 +8,20 @@ paths:
   sqlite_db: data/db/attrib.sqlite
   ct_cache: data/cache/ct
 
+# Primary five (SPEC.md §22: five markets is plenty). Agora/Evolution
+# deferred: volume/overlap only; at ~14 pages/sec they are ~17h combined.
 markets:
   - cannabisroad3
   - nucleus
   - silkroad1
   - silkroad2
-  - agora
-  - evolution
   - thehub
+
+# Skipped for Prompt 02 (archives already on disk; ingest later if unique
+# posts are well under 1M). Reasons go in docs/build-log.md.
+skipped_markets:
+  agora: throughput — extra volume/overlap already covered by SR2 + TheHub
+  evolution: throughput — same; lowest unique signal vs hours of parse time
 
 fusion:
   confidence_threshold: 0.83

@@ -84,3 +84,71 @@ Copy this block for each prompt:
 - **Stack:** Correlation → Attribution → Evidence / Investigation.
 - **Judge/interview notes:** Third layer is why-believe / what-observed / what-next — turns a calibrated score into an interrogable case file without changing the deterministic scoring path.
 - **Issues / near-misses:** none — framing only; no code change.
+
+### 2026-09-03 — prompts/03-evidence-extraction.md
+
+- **Status:** partial (code + unit tests; full-corpus extract blocked on Prompt 02 ingest)
+- **Profile:** dev
+- **What shipped:** `src/evidence/{pgp,crypto_addr,onion,extract,score,htmltext}.py`; fixture `tests/fixtures/pgp_trappy_msg1596.asc` (cannabisroad3 msg 1596 / Trappy).
+- **DoD:**
+  - evidence populated across full corpus → **not run** (Silk Road 1 ingest still in progress; did not write `evidence` on the live DB)
+  - per-kind counts / 10-row spot-check / multi-alias shared PGP or wallet → **pending** full extract
+  - shared-evidence score: one PGP → **0.875** (`1 - 0.5^3`, spec ~0.88); empty pair → **0** → **pass** (unit)
+- **Tests:** `test_crypto_addr.py` 3 passed (4 real CR3 addresses valid; MD5 `16936e5adb8a36cbb21d38beeb6f8e11` and short `3y4kBQhzP5dPh1AiMhNWU7HKLB3` rejected); `test_pgp.py` 5 passed (fingerprint `74D0519647C44BCBC03A182421819BFFDB3D03BC`); `test_evidence_extract.py` 2 passed (`dangerousminds.net` from topic 440). **10 passed in 0.11s**
+- **Issues / near-misses:** `pgpy` imports removed-stdlib `imghdr` on Python 3.13 — stubbed in `pgp.py`. ~6 CR3 pubkey blocks fail `PGPKey.from_blob` (scrape-mangled armor); fallback keeps Key ID rather than dropping. Keccak-256 for Monero is local (hashlib SHA3 is the wrong padding).
+- **Judge/interview notes:** Regex-only BTC is the credibility trap; the unit test is the proof, not the extractor existing.
+
+### 2026-09-04 — Prompt 02 market cut (throughput)
+
+- **Status:** decision recorded; Silk Road 1 ingest still running
+- **Profile:** dev
+- **Choice:** ingest **cannabisroad3 + nucleus + silkroad1 + silkroad2 + thehub**. Skip **agora** and **evolution** for this pass.
+- **Why:** measured ~14 pages/sec. Spec §22: skip a market rather than block — five is plenty. SR2 = SR1 migration cases; TheHub = highest cross-market overlap for Prompt 04 labels. Agora/Evolution are extra volume/time overlap, not a unique signal.
+- **Skip reasons (Prompt 02 DoD):**
+  - `agora`: deferred — throughput; overlap already covered by SR2 + TheHub
+  - `evolution`: deferred — same; lowest unique signal per hour
+- **1M-post risk:** Nucleus was 609k parsed → **64,165 unique**. Unique << parsed because of re-scrapes. Five markets may land under 1M unique rows. If that happens, add Agora next (volume), not Evolution. Do not pretend we hit 1M.
+- **Not doing tonight:** do not start Agora/Evolution after SR1. Next: SR2, then TheHub. Archives stay on disk.
+
+### 2026-09-04 — Silk Road 1 stopped after first scrape
+
+- **Status:** SR1 ingest halted on purpose after ~10h / ~168k pages
+- **Decision:** first snapshot is enough. DB had **711,202** unique SR1 posts, all `scrape_date=2013-11-03`, **35,649** aliases, **0** null lineage. Remaining pages were later overlapping scrapes (newest-wins), not a new market.
+- **Corpus after stop:** cannabisroad3 4,764 + nucleus 64,165 + silkroad1 711,202 = **780,131** posts. Next: silkroad2, then thehub. Agora/evolution still skipped.
+- **Judge/interview notes:** SR1 is the 2013-11-03 snapshot only; we did not apply later dumps because of ingest time. Rows are complete and lined.
+
+### 2026-09-04 — Silk Road 2 stopped; The Hub started
+
+- **Status:** SR2 halted after ~5h / 10k pages. TheHub ingest started.
+- **SR2 kept:** **112,661** unique posts, **5,986** aliases, scrape dates 2013-12-27 / 2014-01-07 / 2014-01-11, **0** null lineage. Parsed copies were ~219k — remaining work is slow re-scrapes (~1.2 pages/sec).
+- **Corpus after stop:** CR3 4,764 + nucleus 64,165 + SR1 711,202 + SR2 112,661 = **892,792** posts, 4 markets. Need TheHub for the fifth market and likely to clear 1M unique.
+- **Skip still:** agora, evolution (throughput).
+
+### 2026-09-04 — The Hub stopped; five-market corpus frozen
+
+- **Status:** TheHub halted after ~3h / 8k pages. No further market ingest this pass.
+- **TheHub kept:** **19,719** unique posts, **1,674** aliases, scrapes Jan–Apr 2014, **0** null lineage. Unique growth had stalled (~+3k unique while copies doubled) — remaining pages are re-scrapes.
+- **Final corpus:** **912,511** posts, **49,357** aliases, **5 markets**. **1,643** aliases appear on 2+ markets (Prompt 04 label source).
+- **1M bar:** **not met** (912,511). Honest shortfall ~87k. Chasing it via more TheHub hours would not get there; Agora would. Deferred with the existing skip reason.
+- **Skipped:** agora, evolution (throughput / overlap already covered).
+
+### 2026-09-04 — prompts/02-ingest-scale.md
+
+- **Status:** complete with honest shortfall (5 markets, 912,511 posts ≠ 1M)
+- **Profile:** dev
+- **What shipped:** phpBB/PunBB fallback (`src/ingest/phpbb_parser.py`) triggered by nucleus; SMF path used for CR3/SR1/SR2/TheHub; multi-market load + progress; `config.yaml` primary five + skipped_markets.
+- **DoD:**
+  - ≥1M posts / ≥5 markets → **fail the 1M number, pass 5 markets.** Actual: **912,511** posts, markets `cannabisroad3, nucleus, silkroad1, silkroad2, thehub`. Short by **87,489**. Cause: unique << parsed (re-scrapes); Agora/Evolution skipped for throughput; SR1/SR2/TheHub stopped after unique growth flattened. Agora would close the gap; more Hub hours would not.
+  - null lineage → **0** (queried)
+  - Per-market (parser / posts / aliases / scrape range / sample lineage):
+    - cannabisroad3 SMF 4,764 / 1,524 / 2014-11-23..25 / `cannabisroad3-forums.tar.xz` / 2014-11-25 / `.../index.php?topic=2.0`
+    - nucleus phpBB 64,165 / 4,524 / 2014-11-21..2015-07-05 / `nucleus-forums.tar.xz` / 2015-04-26 / `.../viewtopic.php?id=2`
+    - silkroad1 SMF 711,202 / 35,649 / 2013-11-03 snapshot / `silkroad1-forums.tar.xz` / 2013-11-03 / `.../index.php?topic=3.msg894`
+    - silkroad2 SMF 112,661 / 5,986 / 2013-12-27..2014-01-11 / `silkroad2-forums.tar.xz` / 2014-01-07 / `.../index.php?topic=3.0;all`
+    - thehub SMF 19,719 / 1,674 / 2014-01-26..2014-04-21 / `thehub-forums.tar.xz` / 2014-04-21 / `.../index.php?topic=2.0`
+  - Skipped: **agora** — throughput; volume/overlap already covered by SR2+TheHub. **evolution** — same; lowest unique signal per hour. Archives remain on disk.
+  - Re-run same market: `test_multi_market_load.py` totals stable; fetch skips valid xz already on disk.
+  - phpBB 5-post live spot-check (nucleus msg 2–6: sniffsniff, twister, heydude, vrc, vrc) — lineage + sha256 + raw_html populated.
+- **Tests:** `test_smf_parser.py` (incl. silkroad1 fixture), `test_phpbb_parser.py`, `test_dedupe.py`, `test_post_provenance.py`, `test_multi_market_load.py` → **8 passed in 0.42s**
+- **Aliases table:** 49,357 rows. **1,643** aliases appear on 2+ markets.
+- **Judge/interview notes:** We did not hit 1M unique posts. We hit 5 markets and the signals that matter (SR1→SR2 migration corpus, TheHub overlap). Do not say 1M on stage.

@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 from bs4 import BeautifulSoup
 
 TS_FMT = "%B %d, %Y, %I:%M:%S %p"
+TS_FMT_NO_SECONDS = "%B %d, %Y, %I:%M %p"
 USER_ID_RE = re.compile(r"action=profile;u=(\d+)")
 MSG_ID_RE = re.compile(r"^msg_(\d+)$")
 ONION_RE = re.compile(
@@ -75,10 +76,12 @@ def parse_timestamp(text: str, scrape_date: date) -> datetime | None:
     m = ON_TS_RE.search(cleaned)
     candidate = m.group(1).strip() if m else cleaned
     candidate = candidate.strip(" :")
-    try:
-        return datetime.strptime(candidate, TS_FMT)
-    except ValueError:
-        return None
+    for fmt in (TS_FMT, TS_FMT_NO_SECONDS):
+        try:
+            return datetime.strptime(candidate, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def _int_or_none(text: str | None, pattern: re.Pattern[str]) -> int | None:

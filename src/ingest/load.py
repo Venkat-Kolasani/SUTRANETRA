@@ -14,7 +14,20 @@ from src.ingest.fetch import fetch_archive
 from src.ingest.schema import init_db
 from src.ingest.smf_parser import Post, parse_topic_page
 
+# Lazy import for phpBB parser — only loaded if a market's HTML doesn't match SMF.
+_phpbb_parser = None
+
+
+def _get_phpbb_parser():
+    global _phpbb_parser
+    if _phpbb_parser is None:
+        from src.ingest import phpbb_parser as _mod
+        _phpbb_parser = _mod
+    return _phpbb_parser
+
+
 SCRAPE_DATE_RE = re.compile(r"/(\d{4}-\d{2}-\d{2})/")
+TOPIC_MEMBER_RE = re.compile(r"(index\.php\?topic=|viewtopic\.php)")
 
 INSERT_POST_SQL = """
 INSERT OR REPLACE INTO posts (
@@ -47,25 +60,62 @@ def scrape_date_from_member(name: str) -> date | None:
 
 
 def is_topic_member(name: str) -> bool:
-    return "index.php?topic=" in name
+    return bool(TOPIC_MEMBER_RE.search(name))
+
+
+def _topic_members(tar: tarfile.TarFile):
+    members = [
+        m for m in tar.getmembers() if m.isfile() and is_topic_member(m.name)
+    ]
+    members.sort(key=lambda m: (scrape_date_from_member(m.name) or date.min, m.name))
+    return members
+
+
+def _read_member(tar: tarfile.TarFile, member: tarfile.TarInfo) -> str | None:
+    fh = tar.extractfile(member)
+    if fh is None:
+        return None
+    return fh.read().decode("utf-8", errors="replace")
+
+
+def detect_forum_type_from_html(html: str) -> str | None:
+    if "div.post_wrapper" in html or 'class="post_wrapper"' in html:
+        return "smf"
+    if (
+        "div.postbody" in html
+        or 'class="postbody"' in html
+        or 'id="punviewtopic"' in html
+    ):
+        return "phpbb"
+    return None
+
+
+def detect_forum_type(archive_path: Path) -> str:
+    """Sample a few topic pages to detect SMF vs phpBB markup."""
+    with tarfile.open(archive_path, "r:xz") as tar:
+        seen = 0
+        for member in tar.getmembers():
+            if not member.isfile() or not is_topic_member(member.name):
+                continue
+            html = _read_member(tar, member)
+            if html is None:
+                continue
+            kind = detect_forum_type_from_html(html)
+            if kind:
+                return kind
+            seen += 1
+            if seen >= 5:
+                break
+    return "unknown"
 
 
 def iter_topic_pages(archive_path: Path):
     """Yield (member_path, scrape_date, html) in ascending scrape-date order."""
     with tarfile.open(archive_path, "r:xz") as tar:
-        members = [
-            m
-            for m in tar.getmembers()
-            if m.isfile() and is_topic_member(m.name)
-        ]
-        members.sort(
-            key=lambda m: (scrape_date_from_member(m.name) or date.min, m.name)
-        )
-        for member in members:
-            fh = tar.extractfile(member)
-            if fh is None:
+        for member in _topic_members(tar):
+            html = _read_member(tar, member)
+            if html is None:
                 continue
-            html = fh.read().decode("utf-8", errors="replace")
             yield member.name, scrape_date_from_member(member.name), html
 
 
@@ -135,35 +185,74 @@ def load_archive(
     db_path: str | Path,
     market: str,
     source_archive: str | None = None,
+    forum_type: str | None = None,
+    progress: bool = True,
 ) -> dict:
     archive_path = Path(archive_path)
     source_archive = source_archive or archive_path.name
     init_db(db_path)
+
     n_pages = 0
     n_parsed = 0
     n_page_failures = 0
     n_skipped_no_date = 0
+    batch: list[Post] = []
+    BATCH_SIZE = 500
+    _parse = None
 
-    # Members come in ascending scrape-date order so INSERT OR REPLACE keeps the newest.
-    with sqlite3.connect(db_path) as conn:
-        for member_path, scrape_date, html in iter_topic_pages(archive_path):
+    # One tar open: list once, detect from the first topic pages, then parse.
+    # Members are processed in ascending scrape-date order so INSERT OR REPLACE
+    # keeps the newest scrape.
+    with tarfile.open(archive_path, "r:xz") as tar, sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        members = _topic_members(tar)
+        for member in members:
+            scrape_date = scrape_date_from_member(member.name)
             if scrape_date is None:
                 n_skipped_no_date += 1
                 continue
+            html = _read_member(tar, member)
+            if html is None:
+                continue
+            if _parse is None:
+                detected = forum_type or detect_forum_type_from_html(html)
+                if detected == "phpbb":
+                    _parse = _get_phpbb_parser().parse_topic_page
+                    forum_type = "phpbb"
+                elif detected == "smf":
+                    _parse = parse_topic_page
+                    forum_type = "smf"
+                else:
+                    continue
             n_pages += 1
             try:
-                page_posts = parse_topic_page(
+                page_posts = _parse(
                     html,
                     market,
                     source_archive=source_archive,
                     scrape_date=scrape_date,
-                    source_member_path=member_path,
+                    source_member_path=member.name,
                 )
             except Exception:
                 n_page_failures += 1
                 continue
-            insert_posts(conn, page_posts)
+            batch.extend(page_posts)
             n_parsed += len(page_posts)
+            if len(batch) >= BATCH_SIZE:
+                insert_posts(conn, batch)
+                conn.commit()
+                batch.clear()
+            if progress and n_pages % 2000 == 0:
+                print(
+                    f"  [{market}] {n_pages} pages, {n_parsed} posts so far …",
+                    flush=True,
+                )
+        if _parse is None:
+            raise ValueError(f"unknown forum type for {market}: {forum_type or 'unknown'}")
+        if batch:
+            insert_posts(conn, batch)
+            conn.commit()
+            batch.clear()
         n_aliases = refresh_aliases(conn, market)
         n_posts = conn.execute(
             "SELECT COUNT(*) FROM posts WHERE market = ?", (market,)
@@ -175,6 +264,7 @@ def load_archive(
         conn.commit()
 
     return {
+        "forum_type": forum_type,
         "pages": n_pages,
         "posts_parsed": n_parsed,
         "posts_loaded": n_posts,
@@ -185,11 +275,30 @@ def load_archive(
     }
 
 
+def _print_summary(market: str, archive: Path, summary: dict) -> None:
+    print(f"\n{'=' * 60}", flush=True)
+    print(f"market:  {market}", flush=True)
+    print(f"archive: {archive}", flush=True)
+    print(f"parser:  {summary.get('forum_type', '?')}", flush=True)
+    print(f"pages:   {summary['pages']}", flush=True)
+    print(f"posts parsed: {summary['posts_parsed']}", flush=True)
+    print(f"posts loaded: {summary['posts_loaded']}", flush=True)
+    print(f"aliases: {summary['aliases']}", flush=True)
+    print(f"page failures: {summary['page_failures']}", flush=True)
+    print(f"skipped (no scrape date): {summary['skipped_no_date']}", flush=True)
+    print(f"posts with ts=NULL: {summary['null_ts']}", flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     import argparse
+    import time
 
-    parser = argparse.ArgumentParser(description="Ingest a marketplace archive")
-    parser.add_argument("--market", default="cannabisroad3")
+    parser = argparse.ArgumentParser(description="Ingest marketplace archives")
+    parser.add_argument(
+        "--market",
+        default=None,
+        help="Single market name, or 'all' for every market in config",
+    )
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--archive", default=None, help="Override path to .tar.xz")
     parser.add_argument("--db", default=None)
@@ -200,27 +309,77 @@ def main(argv: list[str] | None = None) -> int:
 
     raw_dir = cfg["paths"]["data_raw"]
     db_path = args.db or cfg["paths"]["sqlite_db"]
+    all_markets: list[str] = cfg.get("markets", [])
 
-    if args.market != "cannabisroad3" and not args.archive:
-        raise SystemExit("Prompt 01 only ships cannabisroad3; pass --archive for others")
-
-    if args.archive:
-        archive = Path(args.archive)
-        if not archive.is_file():
-            raise SystemExit(f"archive not found: {archive}")
+    if args.market and args.market != "all":
+        markets = [args.market]
+    elif args.market == "all":
+        markets = all_markets
     else:
-        archive = fetch_archive(raw_dir)
+        markets = ["cannabisroad3"]
 
-    summary = load_archive(archive, db_path, args.market)
-    print(f"archive: {archive}")
-    print(f"market:  {args.market}")
-    print(f"pages:   {summary['pages']}")
-    print(f"posts parsed: {summary['posts_parsed']}")
-    print(f"posts loaded: {summary['posts_loaded']}")
-    print(f"aliases: {summary['aliases']}")
-    print(f"page failures: {summary['page_failures']}")
-    print(f"skipped (no scrape date): {summary['skipped_no_date']}")
-    print(f"posts with ts=NULL: {summary['null_ts']}")
+    skipped: list[tuple[str, str]] = []
+    results: dict[str, dict] = {}
+
+    for market in markets:
+        print(f"\n>>> {market}", flush=True)
+
+        # Fetch
+        if args.archive and len(markets) == 1:
+            archive = Path(args.archive)
+            if not archive.is_file():
+                raise SystemExit(f"archive not found: {archive}")
+        else:
+            try:
+                print(f"  fetching {market} …", flush=True)
+                t0 = time.time()
+                archive = fetch_archive(raw_dir, market)
+                print(f"  fetched in {time.time() - t0:.1f}s", flush=True)
+            except Exception as exc:
+                reason = f"fetch failed: {exc}"
+                print(f"  SKIP {market}: {reason}", flush=True)
+                skipped.append((market, reason))
+                continue
+
+        # Ingest
+        try:
+            t0 = time.time()
+            summary = load_archive(archive, db_path, market)
+            elapsed = time.time() - t0
+            _print_summary(market, archive, summary)
+            print(f"  elapsed: {elapsed:.1f}s", flush=True)
+            results[market] = summary
+        except Exception as exc:
+            reason = f"ingest failed: {exc}"
+            print(f"  SKIP {market}: {reason}", flush=True)
+            skipped.append((market, reason))
+
+    # Grand totals
+    import sqlite3 as _s
+
+    conn = _s.connect(db_path)
+    total_posts = conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+    total_aliases = conn.execute("SELECT COUNT(*) FROM aliases").fetchone()[0]
+    market_list = [
+        r[0] for r in conn.execute("SELECT DISTINCT market FROM posts").fetchall()
+    ]
+    null_lineage = conn.execute(
+        "SELECT COUNT(*) FROM posts WHERE source_archive IS NULL "
+        "OR scrape_date IS NULL OR source_member_path IS NULL "
+        "OR content_sha256 IS NULL OR raw_html IS NULL"
+    ).fetchone()[0]
+    conn.close()
+
+    print(f"\n{'=' * 60}", flush=True)
+    print("GRAND TOTALS", flush=True)
+    print(f"  total posts:   {total_posts}", flush=True)
+    print(f"  total aliases: {total_aliases}", flush=True)
+    print(f"  markets:       {market_list}", flush=True)
+    print(f"  null lineage:  {null_lineage}", flush=True)
+    if skipped:
+        print("SKIPPED:", flush=True)
+        for m, r in skipped:
+            print(f"  {m}: {r}", flush=True)
     return 0
 
 

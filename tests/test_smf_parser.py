@@ -63,3 +63,32 @@ def test_unparseable_timestamp_is_none_not_guessed():
 def test_today_at_resolves_against_scrape_date():
     ts = parse_timestamp("Today at 03:26:03 AM", date(2014, 11, 25))
     assert ts == datetime(2014, 11, 25, 3, 26, 3)
+
+
+SR1_FIXTURE = Path(__file__).parent / "fixtures" / "silkroad1_topic_10_2013-11-03.html"
+SR1_MEMBER = "silkroad1-forums/2013-11-03/index.php?topic=10.0"
+
+
+def test_silkroad1_selectors_and_timestamp_without_seconds():
+    html = SR1_FIXTURE.read_text(encoding="utf-8", errors="replace")
+    posts = parse_topic_page(
+        html,
+        "silkroad1",
+        source_archive="silkroad1-forums.tar.xz",
+        scrape_date=date(2013, 11, 3),
+        source_member_path=SR1_MEMBER,
+    )
+    assert [(p.msg_id, p.alias) for p in posts] == [
+        (36, "Egoa"),
+        (43, "asdf90"),
+        (1861, "khornate"),
+        (1892, "rake"),
+        (400223, "Zero Gravity"),
+        (400319, "SillyStoner"),
+    ]
+    first = posts[0]
+    assert first.ts == datetime(2011, 6, 18, 11, 13)
+    assert first.source_archive == "silkroad1-forums.tar.xz"
+    assert first.scrape_date == date(2013, 11, 3)
+    assert first.source_member_path == SR1_MEMBER
+    assert first.body.startswith("I know this has been posted around")
