@@ -1,6 +1,7 @@
 data/raw/
 data/db/
 data/cache/
+data/models/
 .venv/
 venv/
 __pycache__/

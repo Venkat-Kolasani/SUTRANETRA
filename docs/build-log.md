@@ -198,4 +198,22 @@ Copy this block for each prompt:
 - **Issues / near-misses:** CPU MiniLM at batch 64 was ~100 posts/s. `S_embed=1.0` with `s_char=0` on 1–2 post aliases is vector collapse, not a two-channel success. `S_time=1.0` on ORDER BY DESC is identical hour histograms, not a demo highlight — use mid-range pairs. Missing `S_time` is SQL NULL, never 0. Fusion (Prompt 07) must impute + `time_missing`.
 - **Judge/interview notes:** `S_embed` is topic/domain proximity, never style. Char n-grams are the style channel. Timezone is an evening-peak UTC-offset *hypothesis* with concentration R as confidence.
 
+### 2026-09-05 — prompts/07-fusion-model.md
+
+- **Status:** complete
+- **Profile:** dev (learned LogisticRegression, **not** heuristic)
+- **What shipped:** `src/pipeline/case.py`; `src/fusion/features.py`, `model.py`, `evaluate.py`. CLI `python -m src.fusion.model --case-id CASE-2026-001`. Plots `docs/eval/pr_curve.png`, `docs/eval/confusion_matrix.png`. Model file `data/models/fusion-v1.joblib` (gitignored).
+- **DoD:**
+  - Case **CASE-2026-001**: snapshot `n_posts=912511, n_aliases=49357`, five markets; `config_hash=9401b484…`; `model_version=fusion-v1@113d4e19`; `threshold=0.83`; `status=complete`.
+  - Alias-disjoint split **True** (handle-grouped): 5615 train alias_ids ∩ 1727 test = ∅. Train 3454 pairs (1404 pos); test 1049 (671 pos). Mixed-handle pairs dropped.
+  - Coefficients: s_time **2.03**, s_hard **1.68**, s_embed **1.12**, time_missing **1.05**, s_char **0.34**, log1p_n_shared_hard **−0.32**, intercept **−2.16**. Hard evidence is large-positive as designed; log1p is negative from collinearity with saturating S_hard. time_missing>0 is a labelled-set quirk (many positives are timestamp-sparse) — do not sell it as “missing time means same person.”
+  - Held-out @0.83: precision **1.0**, recall **0.0149** (10/671), F1 **0.029**, **PR-AUC 0.768**. Headline is PR-AUC, not accuracy, not this recall. Threshold 0.83 is conservative on this split.
+  - PNGs exist (PR 720×600, confusion 540×480).
+  - `pair_scores`: **2,257,292** rows all `case_id=CASE-2026-001`. Second case **CASE-2026-002** threshold **0.70**, 25 rows; case 001 unchanged.
+  - Heuristic smoke (not headline): PR-AUC **0.710**, 0 predictions at 0.83.
+- **Tests:** `test_fusion.py` 1 passed (PGP vector >0.83, topic-only <0.83); `test_cases.py` 2 passed. Plus temporal 3 passed in the same pytest process (6 passed).
+- **Issues / near-misses:** Feature vector is 6-D (spec §10 lists 5 plus Prompt 07 `time_missing`). Test split is denser in positives than the 2.26M candidate pool because mixed pairs drop. Do not quote 0.83-threshold recall as “the system finds 1.5% of matches in production.”
+- **Judge/interview notes:** Confidence is learned, not hand-tuned. Heuristic exists and is worse. Same-handle labels are still a heuristic (Prompt 04 caveat).
+
+
 
