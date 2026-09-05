@@ -376,4 +376,32 @@ Copy this block for each prompt:
 - **Issues / near-misses:** Cluster table still has **375** members from Prompt 08 persist; live `load_graph` now returns **269** nodes / **347** edges — sink projected the stored clusters, not a rebuild. Do not treat 49 erowid.org USED rows as OpSec on those aliases; the planted demo leak is the localhost target, the CT sibling is real. Composite uniqueness on CE 2026.07.1 works. Homebrew install upgraded `openjdk@21` as a dependency.
 - **Judge/interview notes:** networkx still owns correctness; Neo4j is a query/Browser surface. Community Edition cannot GRANT ROLE reader — say that before claiming agent safety. Restart: `neo4j start` with `NEO4J_PASSWORD` set; Browser `http://localhost:7474`.
 
+### 2026-09-06 — prompts/15-investigator-agent.md
+
+- **Status:** complete
+- **Profile:** tools/UI run against CASE-2026-001 with default **dev** (`neo4j.enabled: false`, `llm.enabled: false`). Investigator still talks to local Ollama (`llm_model: qwen2.5:7b`) and to Bolt when `NEO4J_PASSWORD` is set — the sink flag does not gate the read-only query tool. Rehearsals used that setup; structured Search/Clusters/Pair/Trail do not need Ollama.
+- **What shipped:** `src/agent/tools.py` (9 `@tool`s, SQLite `file:?mode=ro`); `src/agent/investigator.py` (`create_agent` + `ChatOllama(temperature=0)`, `recursion_limit=6`); Investigator view in `src/ui/app.py`; `run_cypher(..., readonly=True)` uses `session.execute_read`; `tests/test_cypher_readonly.py`, `tests/test_agent_readonly.py`. LangChain **1.4.0** API is `langchain.agents.create_agent`, not 0.x `initialize_agent`.
+- **Env / keys:** no paid API keys. Ollama is local (`http://127.0.0.1:11434`). `qwen2.5:7b` pulled (4.7 GB). `NEO4J_PASSWORD` is required only for `cypher_query`. Community Edition still cannot `GRANT ROLE reader` — regex + `execute_read` are the controls, same writer password as the sink.
+- **Commands:** `.venv/bin/python -m pytest tests/test_cypher_readonly.py tests/test_agent_readonly.py tests/test_no_framework_leak.py -q`; per-tool spot-checks via `make_tools`; three `ask()` rehearsals; AppTest with Ollama killed.
+- **DoD:**
+  - Read-only SQLite: every tool calls `open_ro`; `CREATE TABLE` / `INSERT` on that URI → `attempt to write a readonly database` → **pass**
+  - Per-tool spot-check (CASE-2026-001, hand-checked vs SQLite/Neo4j):
+    - `search_evidence` pgp handle `OrderOfThePhoenix` → **3** aliases (SR1/SR2/thehub), fingerprint `B44F7C17748D9ED4`
+    - `get_cluster` `silkroad1:OrderOfThePhoenix` → cluster **7**, **6** members, **6** shared identifiers
+    - `score_pair` `cannabisroad3:Saul Goodman` / `cannabisroad3:pothead` → scored, confidence **0.839**
+    - `evidence_trail` cluster 7 → `alias → post → evidence → alias → post → score → opsec` (**7** steps)
+    - `get_case` → CASE-2026-001, threshold **0.83**, status `complete`, config_hash `9401b484d976…`
+    - `alias_timeline` `silkroad1:OrderOfThePhoenix` → **107** posts sampled
+    - `ct_pivot` `erowid.org` → `source=cache`, siblings `['archive.erowid.org']`, **8** issuances
+    - `cypher_query` `MATCH (a:Actor) RETURN count(a)` → **90** (Bolt up at check time)
+  - `opsec_scan https://evil.example.com` → rejected (`Localhost demo targets only`) → **pass**
+  - Three rehearsed NL queries (`qwen2.5:7b`, ~35–45s each) — actual Q + actual answer:
+    1. *Which aliases used the same PGP key as OrderOfThePhoenix on silkroad1?* → tools: `search_evidence` only. Answer lists `silkroad1/silkroad2/thehub:OrderOfThePhoenix` (alias_ids 9502 / 43517 / 48169). Footer: `pgp=B44F7C17748D9ED4`. (Agora is not in this corpus; Nightcrawler PGP rows are too noisy for a demo question.)
+    2. *Walk me through the evidence trail for cluster 7 on CASE-2026-001.* → tools: `evidence_trail`. Narrates SR2 `OrderOfThePhoenix` (154 posts, PGP `B44F7C…`) → thehub (12 posts), fused confidence **0.85** (`S_char` 0.37 / `S_embed` 0.73 / `S_hard` 0.88), corpus_clearnet `en.wikipedia.org`. Footer: `alias → post → evidence → alias → post → score → opsec`.
+    3. *This vendor's forum leaked the clearnet domain erowid.org — which aliases posted it, and what sibling hostnames share its certificate?* → tools: `search_evidence` then `ct_pivot`. **65** aliases in the 80-row sample (e.g. `cannabisroad3:skrillexcanna`, `AngelEyes`, nucleus vendors). Footer: `ct_pivot source=cache siblings=['archive.erowid.org']`. Mentions ≠ ownership; planted OpSec leak remains localhost.
+  - Ollama stopped: `ask()` returns `degraded=True` without hanging; AppTest Investigator shows warning, **0** `chat_input`; Search still loads; sidebar `Ollama: off`. Ollama.app restarted after the check → **pass**
+- **Tests:** `test_cypher_readonly.py` 8, `test_agent_readonly.py` 3, `test_no_framework_leak.py` 1 → **12 passed**. No skips. Leak test: `neo4j` only in `graph/neo4j_sink.py` and `agent/`; langchain/langgraph only in `pipeline/` and `agent/`.
+- **Issues / near-misses:** 7B tool-calling will over-claim cluster mates as PGP sharers if `get_cluster` is in the same turn — routing prompt + compact `search_evidence` dict (aliases[] + 8 lineage samples) + a deterministic provenance footer are what make the rehearsed answers honest. `erowid.org` is a widely mentioned public site (65 aliases in the truncated sample), not a single-vendor leak. CE RBAC is still **not** enforced; a passing regex test is not a read-only role. `osascript quit app Ollama` can fail with user-cancelled; `killall` worked for the degrade check.
+- **Judge/interview notes:** The LLM never scores. Provenance expanders under the chat are the checkable artifact. Demo script is the three rehearsed questions, not free-form. No OpenAI/Anthropic key is required.
+
 
