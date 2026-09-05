@@ -275,6 +275,36 @@ def load_archive(
     }
 
 
+def run(
+    db_path: str | Path,
+    cfg: dict,
+    *,
+    markets: list[str] | None = None,
+) -> dict:
+    """Load archives that exist on disk; skip markets already in SQLite."""
+    init_db(db_path)
+    markets = list(markets if markets is not None else cfg.get("markets") or [])
+    raw_dir = Path((cfg.get("paths") or {}).get("data_raw") or "data/raw")
+    loaded: dict[str, dict] = {}
+    with sqlite3.connect(db_path) as conn:
+        for market in markets:
+            n = conn.execute(
+                "SELECT COUNT(*) FROM posts WHERE market = ?", (market,)
+            ).fetchone()[0]
+            if n > 0:
+                loaded[market] = {"skipped": "already_loaded", "posts_loaded": n}
+                continue
+            archive = raw_dir / f"{market}-forums.tar.xz"
+            if not archive.is_file():
+                loaded[market] = {"skipped": "no_archive"}
+                continue
+            loaded[market] = load_archive(archive, db_path, market, progress=False)
+    with sqlite3.connect(db_path) as conn:
+        n_posts = conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+        n_aliases = conn.execute("SELECT COUNT(*) FROM aliases").fetchone()[0]
+    return {"n_posts": n_posts, "n_aliases": n_aliases, "markets": loaded}
+
+
 def _print_summary(market: str, archive: Path, summary: dict) -> None:
     print(f"\n{'=' * 60}", flush=True)
     print(f"market:  {market}", flush=True)

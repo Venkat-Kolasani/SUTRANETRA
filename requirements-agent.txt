@@ -1,0 +1,7 @@
+# Agentic layer (Prompt 13+). Separate from the core scientific stack.
+# Re-checked against PyPI 2026-09-05; langchain/core moved past SPEC.md §16 pins.
+langgraph==1.2.11
+langchain==1.4.0
+langchain-core==1.6.2
+langchain-ollama==1.1.0
+langgraph-checkpoint-sqlite==3.1.1
