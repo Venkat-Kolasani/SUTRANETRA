@@ -11,7 +11,7 @@ import networkx as nx
 
 from src.evidence.score import WEIGHT
 from src.explain.reason import _open, shorten
-from src.graph.build import centralities, node_key
+from src.graph.build import centralities, node_attrs, node_key
 
 LINEAGE = ("source_archive", "scrape_date", "source_member_path", "content_sha256")
 _CLEARNET_KINDS = frozenset({"clearnet_ref", "corpus_clearnet", "tls_san"})
@@ -103,7 +103,8 @@ def _rank_cluster(conn: sqlite3.Connection, case_id: str, members: list[int]) ->
     deg, bet = centralities(g)
 
     def key(n: str) -> tuple:
-        return (bet.get(n, 0.0), deg.get(n, 0.0), -int(g.nodes[n]["alias_id"]))
+        rec = node_attrs(g, n) or {}
+        return (bet.get(n, 0.0), deg.get(n, 0.0), -int(rec.get("alias_id") or 0))
 
     ordered = sorted(g.nodes(), key=key, reverse=True)
     return [g.nodes[n]["alias_id"] for n in ordered]

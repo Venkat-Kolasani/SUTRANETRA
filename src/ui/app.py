@@ -37,6 +37,8 @@ from src.opsec.scanner import (
 )
 from src.pipeline.case import get_case
 
+# Exports skip aliases that dropped below the case threshold after cluster persist.
+
 TAGLINE = "The eye that follows the hidden threads."
 DEFAULT_HTTP = "http://127.0.0.1:8080"
 DEFAULT_TLS = "https://127.0.0.1:8443"

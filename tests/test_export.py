@@ -5,6 +5,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import networkx as nx
+
 from src.export.writers import (
     search_corpus,
     write_clusters_csv,
@@ -12,6 +14,7 @@ from src.export.writers import (
     write_report_pdf,
 )
 from src.explain.trail import build_evidence_trail
+from src.graph.build import cluster_report
 from src.ingest.schema import init_db
 from src.pipeline.case import create_case
 
@@ -67,7 +70,11 @@ def _seed(db: Path) -> None:
         )
         conn.executemany(
             "INSERT INTO aliases (id, market, alias, n_posts) VALUES (?,?,?,?)",
-            [(1, "silkroad1", "alice", 12), (2, "agora", "bob", 7)],
+            [
+                (1, "silkroad1", "alice", 12),
+                (2, "agora", "bob", 7),
+                (3, "nucleus", "businessglobal", 4),
+            ],
         )
         conn.executemany(
             "INSERT INTO evidence (id, alias_id, post_id, kind, value) VALUES (?,?,?,?,?)",
@@ -86,7 +93,8 @@ def _seed(db: Path) -> None:
         )
         conn.execute(
             "INSERT INTO clusters (case_id, cluster_id, alias_id, confidence) "
-            "VALUES ('CASE-X', 1, 1, 0.91), ('CASE-X', 1, 2, 0.91)"
+            "VALUES ('CASE-X', 1, 1, 0.91), ('CASE-X', 1, 2, 0.91), "
+            "('CASE-X', 1, 3, 0.91)"
         )
         conn.commit()
 
@@ -139,3 +147,18 @@ def test_export_writers_structure(tmp_path: Path):
     write_report_pdf(db, "CASE-X", pdf_path)
     assert pdf_path.exists()
     assert pdf_path.stat().st_size > 500
+
+    g = nx.Graph()
+    g.add_node("silkroad1:alice", alias_id=1, market="silkroad1")
+    with sqlite3.connect(db) as conn:
+        conn.row_factory = sqlite3.Row
+        rep = cluster_report(
+            conn,
+            g,
+            ["silkroad1:alice", "nucleus:businessglobal"],
+            1,
+            {},
+            {},
+        )
+    assert "nucleus:businessglobal" not in [m["node"] for m in rep["members"]]
+    assert rep["n_members"] == 2

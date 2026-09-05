@@ -20,6 +20,7 @@ from src.graph.build import (
     cluster_report,
     load_graph,
     node_key,
+    present_nodes,
     shared_evidence_with_lineage,
 )
 from src.pipeline.case import get_case, set_status
@@ -137,7 +138,7 @@ def cluster_subgraph(
         (case_id, cluster_id),
     ).fetchall()
     nodes = {node_key(r["market"], r["alias"]) for r in members}
-    return g.subgraph([n for n in nodes if n in g]).copy()
+    return g.subgraph(present_nodes(g, list(nodes))).copy()
 
 
 def search_corpus(conn: sqlite3.Connection, query: str, *, limit: int = 50) -> list[dict]:
@@ -282,11 +283,11 @@ def _export_cluster_meta(
     bet: dict[str, float],
 ) -> dict:
     nodes = [node_key(m["market"], m["alias"]) for m in members]
-    comp_nodes = [n for n in nodes if n in g]
+    comp_nodes = present_nodes(g, nodes)
     # ponytail: cluster_report scans all member posts; skip for huge components in JSON export.
     if len(members) <= 25:
-        return cluster_report(conn, g, comp_nodes or nodes, cluster_id, deg, bet)
-    core = max(comp_nodes or nodes, key=lambda n: (bet.get(n, 0.0), deg.get(n, 0.0)))
+        return cluster_report(conn, g, comp_nodes, cluster_id, deg, bet)
+    core = max(comp_nodes, key=lambda n: (bet.get(n, 0.0), deg.get(n, 0.0))) if comp_nodes else ""
     return {
         "cluster_id": cluster_id,
         "n_members": len(members),
@@ -326,7 +327,7 @@ def build_report_data(
             members = cluster_member_rows(conn, case_id, cid)
             alias_ids = [m["alias_id"] for m in members]
             nodes = [node_key(m["market"], m["alias"]) for m in members]
-            comp_nodes = [n for n in nodes if n in g]
+            comp_nodes = present_nodes(g, nodes)
             sub = g.subgraph(comp_nodes).copy() if comp_nodes else nx.Graph()
             rep = _export_cluster_meta(conn, g, members, cid, deg, bet)
             trail_ids = _trail_alias_ids(members)

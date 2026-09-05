@@ -25,6 +25,18 @@ def node_key(market: str, alias: str) -> str:
     return f"{market}:{alias}"
 
 
+def node_attrs(g: nx.Graph, n: str) -> dict | None:
+    """Node data or None. Do not use `n in g` — that can disagree with G.nodes[n]."""
+    try:
+        return g.nodes[n]
+    except KeyError:
+        return None
+
+
+def present_nodes(g: nx.Graph, members: list[str]) -> list[str]:
+    return [n for n in members if node_attrs(g, n) is not None]
+
+
 def load_graph(conn: sqlite3.Connection, case_id: str, threshold: float) -> nx.Graph:
     g = nx.Graph()
     rows = conn.execute(
@@ -149,34 +161,42 @@ def cluster_report(
     deg: dict[str, float],
     bet: dict[str, float],
 ) -> dict:
-    alias_ids = [g.nodes[n]["alias_id"] for n in members]
-    qmarks = ",".join("?" * len(alias_ids))
-    stats = conn.execute(
-        f"""
-        SELECT COUNT(*) AS n_posts, MIN(ts) AS first_ts, MAX(ts) AS last_ts
-        FROM posts WHERE (market || ':' || alias) IN ({qmarks})
-        """,
-        members,
-    ).fetchone()
-    markets = sorted({g.nodes[n]["market"] for n in members})
-    core = max(members, key=lambda n: (bet.get(n, 0.0), deg.get(n, 0.0)))
+    present = present_nodes(g, members)
+    lookup = present or members
+    stats = {"n_posts": 0, "first_ts": None, "last_ts": None}
+    if lookup:
+        qmarks = ",".join("?" * len(lookup))
+        stats = conn.execute(
+            f"""
+            SELECT COUNT(*) AS n_posts, MIN(ts) AS first_ts, MAX(ts) AS last_ts
+            FROM posts WHERE (market || ':' || alias) IN ({qmarks})
+            """,
+            lookup,
+        ).fetchone()
+    markets = sorted(
+        {node_attrs(g, n)["market"] for n in present}
+        if present
+        else {n.split(":", 1)[0] for n in members if ":" in n}
+    )
+    core = max(present, key=lambda n: (bet.get(n, 0.0), deg.get(n, 0.0))) if present else ""
+    alias_ids = [node_attrs(g, n)["alias_id"] for n in present]
     return {
         "cluster_id": cluster_id,
         "n_members": len(members),
         "markets": markets,
         "n_markets": len(markets),
-        "n_posts": stats["n_posts"],
-        "first_ts": stats["first_ts"],
-        "last_ts": stats["last_ts"],
+        "n_posts": stats["n_posts"] if stats else 0,
+        "first_ts": stats["first_ts"] if stats else None,
+        "last_ts": stats["last_ts"] if stats else None,
         "core_alias": core,
         "members": [
             {
                 "node": n,
-                "alias_id": g.nodes[n]["alias_id"],
+                "alias_id": node_attrs(g, n)["alias_id"],
                 "degree_centrality": deg.get(n, 0.0),
                 "betweenness": bet.get(n, 0.0),
             }
-            for n in members
+            for n in present
         ],
         "shared_evidence": shared_evidence_with_lineage(conn, alias_ids),
     }
