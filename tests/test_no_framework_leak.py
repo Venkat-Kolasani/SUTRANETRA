@@ -1,4 +1,7 @@
-"""Nothing outside pipeline/ and agent/ may import langchain/langgraph."""
+"""Nothing outside pipeline/ and agent/ may import langchain/langgraph.
+
+Nothing outside graph/neo4j_sink.py and agent/ may import neo4j (SPEC.md §993).
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,9 @@ BANNED = frozenset(
         "langgraph.checkpoint.sqlite",
     }
 )
+NEO4J_ALLOWED = {
+    Path("graph") / "neo4j_sink.py",
+}
 
 
 def _imports(path: Path) -> list[str]:
@@ -33,11 +39,18 @@ def _imports(path: Path) -> list[str]:
 
 def test_no_framework_leak_outside_pipeline_and_agent():
     leaks = []
+    neo_leaks = []
     for path in ROOT.rglob("*.py"):
         rel = path.relative_to(ROOT)
-        if rel.parts[0] in ALLOWED:
-            continue
-        for name in _imports(path):
-            if name in BANNED or name.startswith("langchain") or name.startswith("langgraph"):
-                leaks.append(f"{rel}: {name}")
+        names = _imports(path)
+        if rel.parts[0] not in ALLOWED:
+            for name in names:
+                if name in BANNED or name.startswith("langchain") or name.startswith("langgraph"):
+                    leaks.append(f"{rel}: {name}")
+        if rel.parts[0] != "agent" and rel not in NEO4J_ALLOWED:
+            if "neo4j" in names:
+                neo_leaks.append(str(rel))
     assert not leaks, "framework leaked outside src/pipeline and src/agent:\n" + "\n".join(leaks)
+    assert not neo_leaks, "neo4j leaked outside src/graph/neo4j_sink.py and src/agent/:\n" + "\n".join(
+        neo_leaks
+    )

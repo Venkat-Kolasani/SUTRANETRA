@@ -354,3 +354,26 @@ Copy this block for each prompt:
 - **Issues / near-misses:** Do **not** `python -m src.pipeline.graph --case-id CASE-2026-001` on the full corpus — fusion node calls `fusion.model.run`, which rescores millions of pairs. Wrapper is for orchestration demo on a small DB or a deliberate re-run. mermaid.ink was unreachable (HTTP 400); PNG is still generated from the compiled graph object, not hand-drawn.
 - **Judge/interview notes:** Delete `src/pipeline/graph.py` and the CLI stages still own the logic. Checkpointer construction must stay inside `with SqliteSaver.from_conn_string(...)`.
 
+### 2026-09-05 — prompts/14-neo4j-projection.md
+
+- **Status:** complete
+- **Profile:** load/rehearse on **demo** (sink on); iteration default remains **dev** (sink off). `--no-neo4j` is the panic switch.
+- **What shipped:** `src/graph/neo4j_sink.py` (constraints, batched UNWIND+MERGE, rehearsed Cypher, RBAC probe); `src/graph/build.py` calls the sink after pyvis when the active profile has `neo4j.enabled`; `requirements-neo4j.txt` (`neo4j==6.2.0`); leak test now also bans `neo4j` outside `graph/neo4j_sink.py` and `agent/`. `langchain-neo4j` chain **not** shipped (bonus only after the four queries).
+- **Server:** Homebrew Neo4j **2026.07.1** Community + OpenJDK 21 (local formula, not Docker). Driver **neo4j==6.2.0** against that Bolt server: load and Cypher succeeded.
+- **Commands:** `brew install neo4j`; `neo4j-admin dbms set-initial-password` (password only in `NEO4J_PASSWORD`, not in git); `neo4j start`; `python -m src.graph.neo4j_sink --case-id CASE-2026-001 --profile demo`; `pytest tests/test_no_framework_leak.py tests/test_graph.py tests/test_export.py`; `neo4j stop` then pyvis+CSV.
+- **DoD:**
+  - Constraints (`SHOW CONSTRAINTS`): `alias_market_name` UNIQUE `(Alias.market, Alias.name)`; `evidence_kind_value` UNIQUE `(Evidence.kind, Evidence.value)`; also Actor.cluster_id and Domain.name → **pass**
+  - Load CASE-2026-001: first clean load **50.3s** (dominated by iCloud SQLite reads, not MERGE). Counts: **375** Alias, **90** Actor, **4576** Evidence, **1** Domain (`archive.erowid.org`), **347** LINKED_TO, **7923** USED, **2** PIVOTS_TO → **pass** (seconds, not minutes)
+  - Second load, same counts (no duplicate nodes/rels) → **pass** (second wall **160s**, still MERGE-idempotent; SQLite reread)
+  - Four rehearsed queries (actual):
+    - 3+ markets: clusters **13** (silkroad2/thehub/silkroad1, max 0.870), **1** (0.868), **7** (0.854)
+    - shortestPath `silkroad1:OrderOfThePhoenix` — `thehub:BlueSkiesRedEyes`: hops `OrderOfThePhoenix` (SR1) → `OrderOfThePhoenix` (thehub) → onion `agorabasakxmewww.onion` → `BlueSkiesRedEyes` (thehub), **len=3**. (`nihilist23`/`nxxxxxxx23` are **0.35**, below 0.83, so they are not in this graph.)
+    - shared BTC: top `15aU3mWBdm5MNPHa5nsz4huPPCNcHwCLnE` **n=3**; 8 more wallets with n=2 (9 rows)
+    - clearnet → Domain: **49** clustered aliases with `erowid.org` `-[:PIVOTS_TO]-> archive.erowid.org` (Cert Spotter sibling from Prompt 09). Public mention of erowid.org is **not** an identity claim.
+  - RBAC: **no enforced read-only role** on Community 2026.07.1. `CREATE USER sutranetra_reader` succeeded; `GRANT ROLE reader` → `51N27` not supported in this edition; that user **could CREATE** a probe node. Fallback: writer creds only on the sink; UI/agent get no write path + regex (Prompt 15). Documented in `SPEC.md` §13.1 and `config.yaml`.
+  - Neo4j stopped: `ServiceUnavailable` on bolt 7687; pyvis `/tmp/CASE-2026-001_graph_no_neo4j.html` **798584** bytes, **269** nodes / **347** edges from current `pair_scores`; CSV **51547** bytes; `python -m src.graph.neo4j_sink` with default **dev** and with `--no-neo4j` both print `neo4j: skipped`. `test_export.py` PDF/JSON/CSV on the fixture DB (writers never import neo4j). Full-case JSON/PDF not re-run (Prompt 11: JSON over 90 clusters is slow; PDF ~22 min on iCloud SQLite).
+- **Tests:** `test_no_framework_leak.py` `test_graph.py` `test_export.py` → **4 passed**. No new Neo4j-spinning tests (Prompt 15 adds `test_cypher_readonly.py`). No skips.
+- **Issues / near-misses:** Cluster table still has **375** members from Prompt 08 persist; live `load_graph` now returns **269** nodes / **347** edges — sink projected the stored clusters, not a rebuild. Do not treat 49 erowid.org USED rows as OpSec on those aliases; the planted demo leak is the localhost target, the CT sibling is real. Composite uniqueness on CE 2026.07.1 works. Homebrew install upgraded `openjdk@21` as a dependency.
+- **Judge/interview notes:** networkx still owns correctness; Neo4j is a query/Browser surface. Community Edition cannot GRANT ROLE reader — say that before claiming agent safety. Restart: `neo4j start` with `NEO4J_PASSWORD` set; Browser `http://localhost:7474`.
+
+

@@ -227,7 +227,15 @@ def render_pyvis(g: nx.Graph, path: Path, *, height: str = "800px") -> None:
         path.write_text(html, encoding="utf-8")
 
 
-def run(db_path: str | Path, case_id: str, html_path: Path | None = None) -> dict:
+def run(
+    db_path: str | Path,
+    case_id: str,
+    html_path: Path | None = None,
+    *,
+    neo4j_settings: dict | None = None,
+    no_neo4j: bool = False,
+    profile_name: str | None = None,
+) -> dict:
     case = get_case(db_path, case_id)
     if case is None:
         raise SystemExit(f"unknown case {case_id}")
@@ -253,6 +261,14 @@ def run(db_path: str | Path, case_id: str, html_path: Path | None = None) -> dic
                     reports.append(cluster_report(conn, g, members, i, deg, bet))
                     break
     render_pyvis(g, html_path)
+    neo4j_summary = None
+    enabled = bool(neo4j_settings and neo4j_settings.get("enabled") and not no_neo4j)
+    print(f"profile: {profile_name or '(unset)'}")
+    print(f"neo4j.enabled: {enabled} (flag --no-neo4j={no_neo4j})")
+    if enabled:
+        from src.graph.neo4j_sink import project as neo4j_project
+
+        neo4j_summary = neo4j_project(db_path, case_id, neo4j_settings, g=g, bet=bet)
     return {
         "case_id": case_id,
         "threshold": threshold,
@@ -263,6 +279,7 @@ def run(db_path: str | Path, case_id: str, html_path: Path | None = None) -> dic
         "n_cluster_rows_match": n_db == g.number_of_nodes(),
         "html": str(html_path),
         "multi_market": reports[:3],
+        "neo4j": neo4j_summary,
     }
 
 
@@ -271,17 +288,29 @@ def main(argv: list[str] | None = None) -> int:
 
     import yaml
 
-    parser = argparse.ArgumentParser(description="Build case actor graph (no Neo4j)")
+    parser = argparse.ArgumentParser(description="Build case actor graph")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--db", default=None)
     parser.add_argument("--case-id", required=True)
     parser.add_argument("--html", default=None)
+    parser.add_argument("--profile", default=None)
+    parser.add_argument("--no-neo4j", action="store_true")
     args = parser.parse_args(argv)
     with open(args.config, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
+    from src.graph.neo4j_sink import active_profile, neo4j_settings
+
+    name, block = active_profile(cfg, args.profile)
     db_path = args.db or cfg["paths"]["sqlite_db"]
     html = Path(args.html) if args.html else None
-    summary = run(db_path, args.case_id, html)
+    summary = run(
+        db_path,
+        args.case_id,
+        html,
+        neo4j_settings=neo4j_settings(block),
+        no_neo4j=args.no_neo4j,
+        profile_name=name,
+    )
     print("graph")
     for k in (
         "case_id",
@@ -296,6 +325,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {k}: {summary[k]}")
     print("  multi_market_clusters:")
     print(json.dumps(summary["multi_market"], indent=2, default=str)[:8000])
+    if summary.get("neo4j"):
+        print("  neo4j:", summary["neo4j"].get("graph_counts"), "elapsed_s", summary["neo4j"].get("elapsed_s"))
     return 0
 
 

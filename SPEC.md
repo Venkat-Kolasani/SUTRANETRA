@@ -662,7 +662,9 @@ What it earns:
 - **Multi-user.** Several investigators query one graph; SQLite + in-process networkx can't do that.
 - **Scale story that isn't hypothetical.** "Graph exceeds RAM" stops being a slide and becomes a wired path.
 
-**Install:** Neo4j Community Edition, zip or Desktop (JVM bundled). No Docker. Free, no licence. Default bolt `bolt://localhost:7687`.
+**Install:** Neo4j Community Edition, zip, Desktop, or a local Homebrew formula (JVM bundled). No Docker. Free, no licence. Default bolt `bolt://localhost:7687`.
+
+**Community Edition RBAC (verified on Neo4j Kernel 2026.07.1 community, `neo4j==6.2.0` driver):** `CREATE USER` succeeds; `GRANT ROLE reader` returns `UnsupportedAdministrationCommand` (`51N27`, not supported in this edition). A second native user can still `CREATE` nodes. Do not claim an enforced read-only role. Fallback: writer credentials stay in the pipeline sink; UI/agent use a no-write code path (`assert_readonly_cypher` + `execute_read` in Prompt 15) and never receive the writer password. `test_cypher_readonly.py` only tests the regex.
 
 **Model:**
 ```cypher

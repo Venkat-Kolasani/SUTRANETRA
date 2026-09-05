@@ -1,0 +1,3 @@
+# Optional Neo4j driver (Prompt 14 / SPEC.md §13.1). Not required for ingest/scoring.
+# Pin matches SPEC.md; confirm against the installed Community server at load time.
+neo4j==6.2.0
