@@ -24,6 +24,12 @@ from src.fusion.features import (
     impute_row,
     pair_hard,
 )
+from src.fusion.sparse import (
+    REASON_INSUFFICIENT,
+    SPARSE_CONF_CEILING,
+    SPARSE_MIN_POSTS,
+    apply_sparse_gate,
+)
 from src.ingest.schema import init_db
 from src.pipeline.case import create_case, get_case, set_status
 
@@ -113,12 +119,17 @@ def _load_labeled_features(conn: sqlite3.Connection, means: dict, ev) -> list[di
     return out
 
 
-def _flush(conn, insert, case_id, xs, meta, labels, predict_fn) -> int:
+def _flush(conn, insert, case_id, xs, meta, labels, predict_fn, post_counts) -> int:
     x = np.asarray(xs, dtype=np.float64)
     conf = predict_fn(x)
     rows = []
     for (r, sh, ns), c in zip(meta, conf):
         key = (r["a_alias_id"], r["b_alias_id"])
+        gated, reason = apply_sparse_gate(
+            float(c),
+            post_counts.get(r["a_alias_id"]),
+            post_counts.get(r["b_alias_id"]),
+        )
         rows.append(
             (
                 case_id,
@@ -129,8 +140,9 @@ def _flush(conn, insert, case_id, xs, meta, labels, predict_fn) -> int:
                 sh,
                 r["s_time"],
                 ns,
-                float(c),
+                gated,
                 labels.get(key),
+                reason,
             )
         )
     conn.executemany(insert, rows)
@@ -158,11 +170,15 @@ def score_candidates(
             "SELECT a_alias_id, b_alias_id, label FROM label_pairs"
         )
     }
+    post_counts = {
+        r["id"]: r["n_posts"]
+        for r in conn.execute("SELECT id, n_posts FROM aliases")
+    }
     insert = """
         INSERT INTO pair_scores (
           case_id, a_alias_id, b_alias_id,
-          s_char, s_embed, s_hard, s_time, n_shared_hard, confidence, label
-        ) VALUES (?,?,?,?,?,?,?,?,?,?)
+          s_char, s_embed, s_hard, s_time, n_shared_hard, confidence, label, reason
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """
     conn.execute("DELETE FROM pair_scores WHERE case_id = ?", (case_id,))
     xs, meta, n = [], [], 0
@@ -172,13 +188,42 @@ def score_candidates(
         xs.append(x)
         meta.append((r, sh, ns))
         if len(xs) >= 20000:
-            n += _flush(conn, insert, case_id, xs, meta, labels, predict_fn)
+            n += _flush(
+                conn, insert, case_id, xs, meta, labels, predict_fn, post_counts
+            )
             xs, meta = [], []
             conn.commit()
     if xs:
-        n += _flush(conn, insert, case_id, xs, meta, labels, predict_fn)
+        n += _flush(conn, insert, case_id, xs, meta, labels, predict_fn, post_counts)
     conn.commit()
     return n
+
+
+def patch_sparse_reasons(db_path: str | Path, case_id: str) -> int:
+    """Cap confidence + set reason on already-scored sparse pairs (no retrain)."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            UPDATE pair_scores
+            SET confidence = MIN(confidence, ?),
+                reason = ?
+            WHERE case_id = ?
+              AND (
+                a_alias_id IN (SELECT id FROM aliases WHERE COALESCE(n_posts, 0) < ?)
+                OR b_alias_id IN (SELECT id FROM aliases WHERE COALESCE(n_posts, 0) < ?)
+              )
+            """,
+            (
+                SPARSE_CONF_CEILING,
+                REASON_INSUFFICIENT,
+                case_id,
+                SPARSE_MIN_POSTS,
+                SPARSE_MIN_POSTS,
+            ),
+        )
+        conn.commit()
+        return int(cur.rowcount)
 
 
 def run(

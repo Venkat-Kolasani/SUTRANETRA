@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS pair_scores (
   n_shared_hard INTEGER,
   confidence REAL,
   label INTEGER,
+  reason TEXT,
   PRIMARY KEY (case_id, a_alias_id, b_alias_id)
 );
 
@@ -112,12 +113,20 @@ EXPECTED_TABLES = (
 )
 
 
+def _migrate_pair_scores_reason(conn: sqlite3.Connection) -> None:
+    """Existing DBs created before Prompt 12 lack pair_scores.reason."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(pair_scores)")}
+    if cols and "reason" not in cols:
+        conn.execute("ALTER TABLE pair_scores ADD COLUMN reason TEXT")
+
+
 def init_db(db_path: str | Path) -> Path:
     """Create parent dirs and apply schema. Safe to call multiple times."""
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as conn:
         conn.executescript(SCHEMA_SQL)
+        _migrate_pair_scores_reason(conn)
     return path
 
 

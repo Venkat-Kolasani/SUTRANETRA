@@ -53,6 +53,9 @@ def template_sentence(ev: dict[str, Any]) -> str:
         parts[-1] += f" — confidence {_fmt(conf)}."
     else:
         parts[-1] += "."
+    reason = ev.get("reason")
+    if reason:
+        parts.append(f"Reason: {reason}.")
     shown, omitted = _sentence_evidence(ev.get("shared_evidence") or [])
     for item in shown:
         kind = item.get("kind")
@@ -145,6 +148,7 @@ def pair_evidence(
         "a": a,
         "b": b,
         "confidence": None if row is None else row["confidence"],
+        "reason": None if row is None else (row["reason"] if "reason" in row.keys() else None),
         "s_char": None if row is None else row["s_char"],
         "s_embed": None if row is None else row["s_embed"],
         "s_hard": None if row is None else row["s_hard"],
