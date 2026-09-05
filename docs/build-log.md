@@ -251,5 +251,27 @@ Copy this block for each prompt:
 - **Issues / near-misses:** Did not add Flask (prompt allows equivalent). Tor HS keys live in `/tmp`, not git. Unauthenticated Cert Spotter used for the one `--live` seed; later demo must replay cache. TLS-SAN is implemented but must not lead the pitch. Dual `Server:` lines (Python BaseHTTP + planted Apache) — detector reports the planted Apache value.
 - **Judge/interview notes:** Headline path is clearnet HTML resource → CT sibling domains. We never scanned a third-party hidden service.
 
+### 2026-09-05 — prompts/10-explain-templates.md
+
+- **Status:** complete
+- **Profile:** dev (no Neo4j, no LLM polish; Prompt 16 not started)
+- **What shipped:** `src/explain/reason.py` (structured evidence dict + `template_sentence` / `explain_pair`); `src/explain/trail.py` (`build_evidence_trail` per SPEC §15). No Ollama/LangChain.
+- **Commands:** `.venv/bin/python -m pytest tests/test_reason.py tests/test_evidence_trail.py -q`; corpus DoD via `explain_pair` / `build_evidence_trail` on `data/db/attrib.sqlite` `CASE-2026-001`.
+- **DoD:**
+  - Preconditions: HEAD **4e74bf0** (opsec) ancestor of itself; **66f769b** (graph) is parent. `pair_scores` **2,257,292**, `clusters` **375**, `opsec_findings` **68** for CASE-2026-001.
+  - 5 real pairs (mix). Two quoted sentences with backing:
+    1. `` `nihilist23` (silkroad1, 2 posts) and `nxxxxxxx23` (silkroad1, 1 posts) — confidence 0.82. Shared PGP fingerprint `0551E0…D26D` in 3 posts. Stylometric similarity 0.47 (char n-gram). `` Backing: alias_ids 36079/36304; confidence **0.8194**; `s_char` **0.470**; `s_embed` **0.474**; `s_hard` **0.875**; `s_time` NULL; `n_shared_hard` **1**; PGP `0551E07ABB21CA0F02FBFBECE8ED5F45C33DD26D` in 3 posts.
+    2. `` `0shit` (cannabisroad3, 1 posts) and `AlexTrusk` (cannabisroad3, 1 posts) — confidence 0.53. Stylometric similarity 0.00 (char n-gram). `` Backing: `n_shared_hard` **0**, `s_time` NULL — no PGP/BTC/temporal clauses; no `None` placeholder.
+    Also generated: Platinum Standard SR2/TheHub PGP `04B63E…2C78` confidence **0.79**; QuickSilverHawk SR1/SR2 PGP `05E519…4322` confidence **0.79**; `0shit`/`Marvingaye` sparse confidence **0.51**.
+  - Multi-market **cluster_id 7** (6 members, 3 markets) Evidence Trail (no fabricated CT):
+    `alias` BlueSkiesRedEyes (silkroad2) → `post` #2302549 silkroad2-forums.tar.xz / 2014-01-07 / `…/topic=4619.0` sha256 `b27e2e0e…` → `evidence` PGP F30FB1D378F8978B → `alias` BlueSkiesRedEyes (thehub) → `post` #2475638 thehub-forums.tar.xz / 2014-04-21 / `…/topic=12.180` sha256 `286a2d17…` → `evidence` onion silkroad6o… → `score` fused **0.84** (S_char=0.34 / S_embed=0.66 / S_hard=0.94). Types: alias, post, evidence, alias, post, evidence, score.
+  - No-OpSec/CT: pair 344/1168 (`Saul Goodman` / `pothead`, cannabisroad3) types end at `score` fused **0.84**; no `opsec`/`ct_cert`/`ct_domain`.
+  - Missing `s_time`: sparse sentences omit posting-hour/UTC. Unit test covers hand-built missing-field dict.
+  - Structured dict keys for Prompt 16: `case_id`, `a`, `b`, `confidence`, `s_char`, `s_embed`, `s_hard`, `s_time`, `n_shared_hard`, `shared_evidence`, `timezone`, `template_sentence`, `framing`, `system`. Full `shared_evidence` list is on the dict even when the sentence caps wallets.
+  - No langchain/langgraph/langchain_ollama/ollama installed in `.venv` → **pass**
+- **Tests:** `tests/test_reason.py` 1 passed; `tests/test_evidence_trail.py` 2 passed → **3 passed in 0.14s**. No skips.
+- **Issues / near-misses:** Ranking `n_shared_hard DESC` hits TheHub wallet-list copypasta (118 BTC) — sentence now lists PGP + ≤2 wallets and a count of the rest; full list remains on the dict. Cluster 1 (122 members) strongest-hard path among top-centrality aliases is same-market Yoda/SelfSovereignty via shared forum clearnet, not PGP; cluster 7 is the cleaner cross-market PGP trail. Corpus `clearnet` extractor still matches filenames (`gpg.conf`); trail can surface those as evidence. `ct_sibling=archive.erowid.org` only attaches when aliases have matching clearnet evidence (demo path not glued onto every cluster).
+- **Judge/interview notes:** Template prose is correlation confidence, not an identity verdict. Trail never invents OpSec/CT. LLM polish is Prompt 16.
+
 
 
