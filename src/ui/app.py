@@ -42,7 +42,7 @@ from src.pipeline.case import get_case
 TAGLINE = "The eye that follows the hidden threads."
 DEFAULT_HTTP = "http://127.0.0.1:8080"
 DEFAULT_TLS = "https://127.0.0.1:8443"
-VIEWS = ["Search", "Clusters", "Pair inspector", "Evidence Trail", "OpSec"]
+VIEWS = ["Search", "Clusters", "Pair inspector", "Evidence Trail", "OpSec", "Investigator"]
 DEMO_PGP = "0551E07ABB21CA0F02FBFBECE8ED5F45C33DD26D"
 DEMO_PAIR = ("nihilist23", "nxxxxxxx23")
 DEMO_LABELS = ("silkroad1:nihilist23", "silkroad1:nxxxxxxx23")
@@ -559,6 +559,51 @@ def tab_opsec(conn: sqlite3.Connection, case_id: str, cfg: dict, db_path: str) -
     export_buttons(case_id, db_path, "opsec")
 
 
+def tab_investigator(case_id: str, cfg: dict, db_path: str) -> None:
+    from src.agent.investigator import ask, ollama_reachable
+
+    st.subheader("Investigator")
+    st.caption(
+        "Natural-language query over stored results. The model does not score aliases "
+        "and does not issue identity verdicts. Provenance rows render under every answer."
+    )
+    if not ollama_reachable():
+        st.warning(
+            "Ollama is unreachable. This tab is offline — use Search, Clusters, "
+            "Pair inspector, and Evidence Trail (structured UI)."
+        )
+        return
+    if "inv_chat" not in st.session_state:
+        st.session_state["inv_chat"] = []
+    for turn in st.session_state["inv_chat"]:
+        with st.chat_message("user"):
+            st.write(turn["q"])
+        with st.chat_message("assistant"):
+            st.write(turn["a"]["text"])
+            st.caption(f"model {turn['a'].get('model')} · case {turn['a'].get('case_id')}")
+            for i, tr in enumerate(turn["a"].get("tool_traces") or []):
+                with st.expander(f"Provenance · {tr.get('name')} · {i+1}"):
+                    st.json(tr.get("args") or {})
+                    out = tr.get("output")
+                    if isinstance(out, dict) and isinstance(out.get("sample"), list):
+                        st.json({k: v for k, v in out.items() if k != "sample"})
+                        if out["sample"] and isinstance(out["sample"][0], dict):
+                            st.dataframe(
+                                pd.DataFrame(out["sample"]), width="stretch", hide_index=True
+                            )
+                    elif isinstance(out, list) and out and isinstance(out[0], dict):
+                        st.dataframe(pd.DataFrame(out), width="stretch", hide_index=True)
+                    else:
+                        st.json(out)
+    q = st.chat_input("Ask a rehearsed question (PGP, trail, clearnet→CT)…")
+    if not q:
+        return
+    with st.spinner("Querying stored results…"):
+        ans = ask(q, db_path=db_path, case_id=case_id, cfg=cfg)
+    st.session_state["inv_chat"].append({"q": q, "a": ans})
+    st.rerun()
+
+
 def main() -> None:
     st.set_page_config(
         page_title="SUTRANETRA",
@@ -586,7 +631,13 @@ def main() -> None:
             case = get_case(db_path, case_id) or next(c for c in cases if c["case_id"] == case_id)
             st.markdown("---")
             st.markdown("**Degraded mode**")
-            st.caption("Neo4j: off · Ollama: off · templates only (dev). Core views do not need either.")
+            from src.agent.investigator import ollama_reachable as _ollama_up
+
+            ollama_on = _ollama_up()
+            st.caption(
+                f"Neo4j: off in this UI · Ollama: {'on' if ollama_on else 'off'} · "
+                "templates + structured views always work."
+            )
 
         render_case_header(case)
         view = st.segmented_control("View", VIEWS, default=VIEWS[0], required=True, key="sutra_view") or VIEWS[0]
@@ -598,8 +649,10 @@ def main() -> None:
             tab_pair(conn, case_id, db_path)
         elif view == "Evidence Trail":
             tab_trail(conn, case_id, db_path)
-        else:
+        elif view == "OpSec":
             tab_opsec(conn, case_id, cfg, db_path)
+        else:
+            tab_investigator(case_id, cfg, db_path)
     finally:
         conn.close()
 
