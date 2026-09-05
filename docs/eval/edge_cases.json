@@ -1,0 +1,77 @@
+{
+  "case_id": "CASE-2026-001",
+  "threshold": 0.83,
+  "sparse_pairs_patched": 1623281,
+  "hard_negative": {
+    "case": "hard_negative",
+    "a": {
+      "market": "silkroad2",
+      "alias": "CaliforniaCannabis",
+      "n_posts": 186,
+      "id": 42145
+    },
+    "b": {
+      "market": "silkroad2",
+      "alias": "domesticdoode",
+      "n_posts": 45,
+      "id": 45206
+    },
+    "why_topic_similar": "Both are silkroad2 vendors whose posts discuss cannabis/weed product and marketplace logistics in a similar informal register; a topic-only model would rate them high (observed S_embed \u2248 0.82).",
+    "features": {
+      "s_char": 0.33221982322615934,
+      "s_embed": 0.8241268396377563,
+      "s_hard": 0.0,
+      "s_time": 0.2501634811888087,
+      "n_shared_hard": 0
+    },
+    "confidence": 0.3505424313511692,
+    "threshold": 0.83,
+    "below_threshold": true,
+    "label": 0
+  },
+  "sparse_evidence": {
+    "case": "sparse_evidence",
+    "alias": {
+      "market": "cannabisroad3",
+      "alias": "BHOgart",
+      "n_posts": 9,
+      "id": 35
+    },
+    "paired_with": {
+      "market": "cannabisroad3",
+      "alias": "BudsBuds",
+      "n_posts": 14
+    },
+    "confidence": 0.35,
+    "reason": "insufficient data",
+    "ceiling": 0.35,
+    "template_sentence": "`BHOgart` (cannabisroad3, 9 posts) and `BudsBuds` (cannabisroad3, 14 posts) \u2014 confidence 0.35. Reason: insufficient data. Shared onion address `cannab\u2026nion` in 4 posts. Stylometric similarity 0.36 (char n-gram).",
+    "enforced": true
+  },
+  "adversarial_paraphrase": {
+    "case": "adversarial_paraphrase",
+    "alias": {
+      "market": "silkroad1",
+      "alias": "Opiofile",
+      "n_posts": 66
+    },
+    "n_posts_half_a": 33,
+    "n_posts_half_b": 33,
+    "baseline_other_alias": "Limetless",
+    "s_char_halves_unparaphrased": 0.4620547223246216,
+    "s_char_real_vs_paraphrased": 0.4318320053576605,
+    "s_char_vs_different_alias": 0.47639314600759664,
+    "s_char_degradation": 0.030222716966961105,
+    "s_hard_unparaphrased_split": 0.875,
+    "n_shared_hard_unparaphrased": 1,
+    "s_hard_after_paraphrase": 0.875,
+    "n_shared_hard_after_paraphrase": 1,
+    "shared_evidence_after": [
+      {
+        "kind": "pgp_fpr",
+        "value": "882B338B944D30BA6DF29A22AEEE07C77654122F"
+      }
+    ],
+    "interpretation": "Paraphrasing half of Opiofile's posts drops S_char from 0.462 (unparaphrased split halves) to 0.432 (real vs paraphrased half) \u2014 degradation 0.030. For reference, the same real half vs a different dense alias (Limetless) scores 0.476. Stylometry therefore moves under style change; it is not a stable identity fingerprint. S_hard stayed at 0.875 (1 shared hard item(s); PGP fingerprint preserved), so hard evidence still carries the link when prose does not. This does not claim robustness if the actor also rotates keys/wallets."
+  }
+}
