@@ -322,3 +322,17 @@ Copy this block for each prompt:
 - **Issues / near-misses:** Cursor browser MCP would not keep a tab in this session (`navigate` required a tab; `tabs new` vanished). Verification used Streamlit `AppTest` against the same views. `st.components.v1.html` deprecation on Clusters is unchanged.
 - **Judge/interview notes:** Dashes on S_time for the demo pair are a real NULL, not a missing row. Five dashes with a shared-onion sentence meant “never scored,” not “all zeros.”
 
+
+### 2026-09-05 — prompts/12-edge-case-tests-and-ethics.md
+
+- **Status:** complete (profile **dev**)
+- **What shipped:** `src/fusion/sparse.py` (post-count gate); `pair_scores.reason` column + schema migrate; fusion score path applies gate; `patch_sparse_reasons` for already-scored cases; `src/fusion/edge_cases.py` + `docs/eval/edge_cases.json`; `docs/ethics.md`; `tests/test_edge_cases.py`. Explain templates surface `reason`.
+- **Commands:** `.venv/bin/python -m src.fusion.edge_cases --case-id CASE-2026-001`; `.venv/bin/python -m pytest tests/test_edge_cases.py tests/test_fusion.py tests/test_reason.py -q`
+- **DoD:**
+  - **Hard-negative:** silkroad2 vendors `CaliforniaCannabis` (186) / `domesticdoode` (45) — cannabis/register overlap, `S_embed=0.824`, `S_char=0.332`, `S_hard=0`, `S_time=0.250`, **confidence=0.351 < 0.83** → **pass**
+  - **Sparse:** `cannabisroad3:BHOgart` (9 posts) vs `BudsBuds` (14) — **confidence=0.35**, `reason=insufficient data` (pre-gate this class of sparse pairs reached ~0.87) → **pass**; **1,623,281** pairs patched on CASE-2026-001
+  - **Paraphrase:** `Opiofile` halves — `S_char` **0.462 → 0.432** (Δ −0.030); `S_hard` **0.875** held (PGP `882B338B…4122F`); different-alias ref `Limetless` `S_char=0.476` → **pass** (honest modest degradation, not tuned)
+  - `docs/ethics.md` covers all six §2 points in own words → **pass**
+- **Tests:** `test_edge_cases.py` 3 passed; `test_fusion.py` 1; `test_reason.py` 1 → **5 passed**. No skips.
+- **Issues / near-misses:** Sparse gate was missing before this prompt — high hard-evidence sparse pairs could score ~0.87. Char-n-gram paraphrase degradation is modest under synonym/dropout paraphrase; that is the real number, not a failure. Do not claim stylometry survives serious style change.
+- **Judge/interview notes:** Correct rejection (hard-neg) is stronger than a successful match. Sparse path is enforced in code (`apply_sparse_gate`), not coincidence. Ethics: localhost-only OpSec target; CT public; identifiers ≠ verdicts.
