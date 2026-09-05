@@ -803,11 +803,11 @@ PS names CSV, JSON and report generation explicitly. Half a day of work. Don't s
 
 Two separate uses. One is orchestration, one is a real agent. Both are in scope; they are not the same thing and should not be built at the same time.
 
-**Package versions (checked on PyPI 27 Aug 2026 — pin these):**
+**Package versions (re-checked on PyPI 5 Sep 2026 — pin what resolved):**
 ```
 langgraph==1.2.11
-langchain==1.3.17
-langchain-core==1.6.0
+langchain==1.4.0
+langchain-core==1.6.2
 langchain-ollama==1.1.0
 langgraph-checkpoint-sqlite==3.1.1
 ```

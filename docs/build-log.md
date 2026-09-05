@@ -336,3 +336,21 @@ Copy this block for each prompt:
 - **Tests:** `test_edge_cases.py` 3 passed; `test_fusion.py` 1; `test_reason.py` 1 → **5 passed**. No skips.
 - **Issues / near-misses:** Sparse gate was missing before this prompt — high hard-evidence sparse pairs could score ~0.87. Char-n-gram paraphrase degradation is modest under synonym/dropout paraphrase; that is the real number, not a failure. Do not claim stylometry survives serious style change.
 - **Judge/interview notes:** Correct rejection (hard-neg) is stronger than a successful match. Sparse path is enforced in code (`apply_sparse_gate`), not coincidence. Ethics: localhost-only OpSec target; CT public; identifiers ≠ verdicts.
+
+### 2026-09-05 — prompts/13-langgraph-orchestration.md
+
+- **Status:** complete (profile **dev**)
+- **What shipped:** `requirements-agent.txt` (separate pin group); `src/pipeline/graph.py` (thin StateGraph wrappers); `src/ingest/load.py` `run()`; `tests/test_no_framework_leak.py`; `tests/test_pipeline_graph.py`; `docs/architecture.png` + `docs/architecture.mmd` generated from the compiled graph. Empty `src/agent/` package for the leak-test allowlist (Prompt 15).
+- **Installed (PyPI 2026-09-05, not the Aug spec snapshot):** langgraph **1.2.11**, langchain **1.4.0**, langchain-core **1.6.2**, langchain-ollama **1.1.0**, langgraph-checkpoint-sqlite **3.1.1**. `SqliteSaver.from_conn_string` is a **context manager** (`Iterator[SqliteSaver]`) — compiled_app holds the `with` for the invoke.
+- **Commands:** `pip install -r requirements-agent.txt`; `.venv/bin/python -m pytest tests/test_no_framework_leak.py tests/test_fusion.py tests/test_pipeline_graph.py tests/test_cases.py -q`; `python -m src.evidence.extract --help`; `python -m src.graph.build --help`
+- **DoD:**
+  - Core stack after agentic install: `test_fusion.py` + `test_cases.py` still pass → **pass**
+  - Tiny-DB e2e through compiled graph: 32 aliases, evidence rows ≥1, scored pairs 165, trail types match `build_evidence_trail` standalone, case status `complete` → **pass** (MiniLM embed stubbed in that test; char/fusion/graph/trail are real. Full MiniLM on this laptop was too slow for the unit loop.)
+  - Checkpoint resume: `interrupt_after=["ingest"]`, second `invoke(None)` — `ingest.load.run` called **once** → **pass**
+  - Parallel: monkeypatched stylometry/opsec each sleep 0.40s; overlap **>0.2s** (LangGraph thread pool) → **pass**
+  - `docs/architecture.png` **65061** bytes from compiled graph (mermaid.ink 400 → local networkx render of the same edges); mermaid source in `docs/architecture.mmd` → **pass**
+  - Stages still CLI-runnable without using `pipeline/graph.py`: `python -m src.evidence.extract --help` / `python -m src.graph.build --help` → **pass**
+- **Tests:** 9 passed in 14.78s (`test_no_framework_leak` 1, `test_fusion` 1, `test_pipeline_graph` 4, `test_cases` 3). No skips.
+- **Issues / near-misses:** Do **not** `python -m src.pipeline.graph --case-id CASE-2026-001` on the full corpus — fusion node calls `fusion.model.run`, which rescores millions of pairs. Wrapper is for orchestration demo on a small DB or a deliberate re-run. mermaid.ink was unreachable (HTTP 400); PNG is still generated from the compiled graph object, not hand-drawn.
+- **Judge/interview notes:** Delete `src/pipeline/graph.py` and the CLI stages still own the logic. Checkpointer construction must stay inside `with SqliteSaver.from_conn_string(...)`.
+
