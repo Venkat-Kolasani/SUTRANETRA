@@ -592,6 +592,12 @@ def run_cypher(settings: dict, cypher: str, params: dict | None = None, *, reado
     driver = _driver(settings)
     try:
         with driver.session(database=settings.get("database") or "neo4j") as session:
+            if readonly:
+
+                def _read(tx, q=cypher, p=params or {}):
+                    return [dict(r) for r in tx.run(q, p)]
+
+                return session.execute_read(_read)
             result = session.run(cypher, params or {})
             return [dict(r) for r in result]
     finally:
