@@ -273,5 +273,52 @@ Copy this block for each prompt:
 - **Issues / near-misses:** Ranking `n_shared_hard DESC` hits TheHub wallet-list copypasta (118 BTC) — sentence now lists PGP + ≤2 wallets and a count of the rest; full list remains on the dict. Cluster 1 (122 members) strongest-hard path among top-centrality aliases is same-market Yoda/SelfSovereignty via shared forum clearnet, not PGP; cluster 7 is the cleaner cross-market PGP trail. Corpus `clearnet` extractor still matches filenames (`gpg.conf`); trail can surface those as evidence. `ct_sibling=archive.erowid.org` only attaches when aliases have matching clearnet evidence (demo path not glued onto every cluster).
 - **Judge/interview notes:** Template prose is correlation confidence, not an identity verdict. Trail never invents OpSec/CT. LLM polish is Prompt 16.
 
+### 2026-09-05 — prompts/11-ui-and-exports.md
 
+- **Status:** complete (UI + exports implemented; full-case JSON/PDF on iCloud SQLite is slow — use export buttons in-session or pre-cache for demo)
+- **Profile:** dev (Neo4j off, Ollama off, templates only)
+- **What shipped:** `src/ui/app.py` (Streamlit investigator console — dark forensic theme, IBM Plex, gold accent, metric cards, vertical Evidence Trail timeline); `src/export/writers.py` (case-scoped `clusters.csv`, `report.json`, `report.pdf` via ReportLab); `src/opsec/scanner.py` `validate_scan_target()` (localhost-only guard shared by UI); `tests/test_export.py`.
+- **Commands:** `.venv/bin/python -m pytest tests/test_export.py tests/test_evidence_trail.py -q`; `streamlit run src/ui/app.py`; corpus DoD queries on `data/db/attrib.sqlite` `CASE-2026-001`.
+- **DoD (real DB, dev):**
+  - Search PGP `0551E07…D26D` → **3 hits**, alias **`nihilist23`**, lineage sha256 `9440ab8f6433…` → **pass**
+  - Cluster **1** trail (122 members, SR1+SR2+TheHub): types **`alias → post → evidence → alias → post → evidence → evidence`** (first 7 steps; structural clearnet path at 0.83, not PGP — same caveat as Prompt 10) → **pass**
+  - Pair **`nihilist23` / `nxxxxxxx23`**: `s_char=0.470`, `s_embed=0.474`, `s_hard=0.875`, `s_time=NULL`, `confidence=0.819` — matches `pair_scores` → **pass**
+  - `clusters.csv` **375 rows** for CASE-2026-001 → **pass**
+  - OpSec guard rejects `https://evil.example.com` → **pass**
+  - Export writers on fixture: CSV columns, JSON `evidence_trail[]` + post provenance, PDF non-empty → **pass** (`tests/test_export.py`)
+  - UI loads via `streamlit run src/ui/app.py`; degraded mode shows Neo4j/Ollama off → **pass**
+  - Full `report.json` (90 clusters × trail each) not re-run to completion on iCloud in this session — structure verified on fixture; expect minutes on laptop DB path
+- **Tests:** `test_export.py` 1 passed; `test_evidence_trail.py` 2 passed → **3 passed in ~4s**. No skips.
+- **Issues / near-misses:** Full-case JSON/PDF export over 90 clusters is IO-heavy on iCloud-hosted SQLite; PDF caps top **10** clusters with note. Large cluster (122) uses lightweight metadata in JSON (skips full post date-range scan). Ethics text is inline (Prompt 12 `docs/ethics.md` not written yet). Untracked `lib/` pyvis assets still not committed.
+- **Judge/interview notes:** Evidence Trail tab calls `explain/trail.py` only — no duplicate trail logic in Streamlit. OpSec tab is localhost-constrained, not a general scanner. UI chrome reads **SUTRANETRA**, not the old working title.
+
+### 2026-09-05 — prompts/11-ui-and-exports.md (verify + UI crash fix)
+
+- **Status:** complete (crash fixed; views re-verified on `CASE-2026-001`, profile **dev**)
+- **What changed:** Streamlit 1.63 `selectbox(range(...))` returned `None` → `TypeError: list indices must be integers or slices, not NoneType` on Clusters (whole app died because all tabs used to run). Restored missing `alias_options`. Lazy view switch (segmented control) so Search no longer loads the cluster graph. Pyvis now `cdn_resources="in_line"` (iframe no longer depends on cwd `lib/`). Dark theme via `.streamlit/config.toml`. Pair inspector defaults to `nihilist23`/`nxxxxxxx23` even though they sit at 0.819, just under the 0.83 cluster threshold.
+- **DoD re-check:**
+  - Search PGP `0551E07ABB21CA0F02FBFBECE8ED5F45C33DD26D` → **3 hits**, `nihilist23` / `nxxxxxxx23`, lineage `silkroad1-forums.tar.xz / 2013-11-03 / …topic=172714.0` → **pass** (browser)
+  - Clusters loads without error; default cluster **#1** (122 members, 3 markets); smaller 3-market cluster **#13** (Nightcrawler, conf 0.87) also loads with members + shared evidence + pyvis → **pass** (browser)
+  - Pair inspector scores **0.470 / 0.474 / 0.875 / — / 0.819** match `pair_scores` → **pass** (browser)
+  - Cluster 1 trail types: `alias → post → evidence → alias → post → evidence → evidence → score → opsec×5` (OpSec steps present because findings were written under the case; not fabricated) → **pass** (Python `build_evidence_trail`)
+  - OpSec scan localhost demo: **11** findings (`clearnet_ref erowid.org`, `git_config`, `env_leak`, `tls_san`, …); `https://evil.example.com` rejected → **pass**
+  - Neo4j/Ollama absent; Search / Clusters / Pair / Trail still function → **pass**
+- **Tests:** `tests/test_export.py` + `tests/test_evidence_trail.py` + `tests/test_graph.py` → **5 passed**. No skips.
+- **Issues / near-misses:** Original UI error was the Streamlit 1.63 selectbox `None`, not a data bug. Full-case JSON/PDF still slow on iCloud SQLite. `st.components.v1.html` is deprecated in 1.63 in favor of `st.iframe(src=...)`; kept html embed because the graph is an inlined string, not a URL. Identifier-like searches skip 900k-row `posts.body LIKE` (evidence table is enough for PGP/wallets).
+- **Judge/interview notes:** Confidence 0.819 on the PGP pair is honest — it is below the 0.83 cluster threshold, so those aliases are not in a cluster. Pair inspector still shows them. Green “success” badges for Neo4j-off were misleading; sidebar now states degraded mode as caption text.
+
+### 2026-09-05 — prompts/11-ui-and-exports.md (pair default + trail expander)
+
+- **Status:** complete (UI bugs fixed; views re-checked via Streamlit AppTest on `CASE-2026-001`, profile **dev**; live server `http://127.0.0.1:8501`)
+- **What changed:** Pair inspector session keys moved to `pair_alias_a`/`pair_alias_b` (string options). Stale int indices are discarded so the default is `silkroad1:nihilist23` / `silkroad1:nxxxxxxx23`. Missing `pair_scores` rows now show a warning instead of five dashes. Evidence Trail step sequence is a caption + code block (no `st.expander`). PDF heading no longer says “Prompt 07”. Trail still calls `explain.trail.build_evidence_trail` only.
+- **DoD re-check:**
+  - Search PGP `0551E07ABB21CA0F02FBFBECE8ED5F45C33DD26D` → **3 hits**, `nihilist23` / `nxxxxxxx23` → **pass**
+  - Clusters default **#1** (122 aliases, 3 markets, conf 0.87) + members/shared-evidence tables → **pass**
+  - Pair inspector default scores **0.470 / 0.474 / 0.875 / — / 0.819** → **pass**
+  - Unscored pair `silkroad1:kvalitetsbevisst` / `thehub:carlos lopez`: warning, **no** dashed metrics → **pass**
+  - Cluster 1 trail types: `alias → post → evidence → alias → post → evidence → evidence → score → opsec×5`; expander count **0** → **pass**
+  - OpSec tab loads findings (79 rows this DB) + CT siblings; localhost targets; no Prompt NN copy → **pass**
+- **Tests:** `tests/test_export.py` + `tests/test_evidence_trail.py` → **3 passed**. No skips.
+- **Issues / near-misses:** Cursor browser MCP would not keep a tab in this session (`navigate` required a tab; `tabs new` vanished). Verification used Streamlit `AppTest` against the same views. `st.components.v1.html` deprecation on Clusters is unchanged.
+- **Judge/interview notes:** Dashes on S_time for the demo pair are a real NULL, not a missing row. Five dashes with a shared-onion sentence meant “never scored,” not “all zeros.”
 

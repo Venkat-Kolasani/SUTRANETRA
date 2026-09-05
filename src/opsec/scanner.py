@@ -21,6 +21,19 @@ SERVER_AT_RE = re.compile(r"Server at\s+(\S+)", re.I)
 GIT_URL_RE = re.compile(r'url\s*=\s*(\S+)', re.I)
 INDEX_RE = re.compile(r"Index of\s+/", re.I)
 DEFAULT_MARKERS = ("Welcome to nginx!", "It works!", "Apache2 Ubuntu Default Page")
+ALLOWED_SCAN_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def validate_scan_target(url: str) -> str:
+    """Reject non-localhost scan targets (UI + CLI guard)."""
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("Only http/https targets are allowed.")
+    host = (parsed.hostname or "").lower()
+    if host not in ALLOWED_SCAN_HOSTS:
+        raise ValueError("OpSec scans are limited to localhost demo targets (127.0.0.1 / localhost).")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return f"{parsed.scheme}://{host}:{port}"
 
 
 class _RefParser(HTMLParser):

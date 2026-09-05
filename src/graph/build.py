@@ -12,6 +12,13 @@ from src.pipeline.case import get_case
 
 CROSS_EDGE = "#d35400"
 SAME_EDGE = "#5d6d7e"
+MARKET_COLOR = {
+    "silkroad1": "#c9a227",
+    "silkroad2": "#3d8bfd",
+    "thehub": "#2ecc71",
+    "nucleus": "#e67e22",
+    "cannabisroad3": "#9b59b6",
+}
 
 
 def node_key(market: str, alias: str) -> str:
@@ -175,7 +182,7 @@ def cluster_report(
     }
 
 
-def render_pyvis(g: nx.Graph, path: Path) -> None:
+def render_pyvis(g: nx.Graph, path: Path, *, height: str = "800px") -> None:
     from pyvis.network import Network
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -183,18 +190,26 @@ def render_pyvis(g: nx.Graph, path: Path) -> None:
         path.write_text("<html><body>empty graph</body></html>", encoding="utf-8")
         return
     pos = nx.spring_layout(g, seed=0, k=2 / max(g.number_of_nodes(), 1) ** 0.5)
-    net = Network(height="800px", width="100%", bgcolor="#111", font_color="#eee")
+    # in_line: Streamlit components.html is an iframe with no cwd ./lib assets.
+    net = Network(
+        height=height,
+        width="100%",
+        bgcolor="#070b12",
+        font_color="#eef2f7",
+        cdn_resources="in_line",
+    )
     net.toggle_physics(False)
     for n, data in g.nodes(data=True):
         x, y = pos[n]
+        market = data.get("market") or (n.split(":", 1)[0] if ":" in n else "")
         net.add_node(
             n,
-            label=n,
+            label=n.split(":", 1)[-1][:18],
             title=n,
             x=float(x) * 800,
             y=float(y) * 800,
             physics=False,
-            color="#1abc9c" if data.get("market") else "#888",
+            color=MARKET_COLOR.get(market, "#1abc9c"),
         )
     for a, b, data in g.edges(data=True):
         cross = bool(data.get("cross_market"))
