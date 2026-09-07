@@ -18,6 +18,7 @@ from src.graph.build import (
     centralities,
     cluster_components,
     cluster_report,
+    load_cluster_graph,
     load_graph,
     node_key,
     present_nodes,
@@ -127,18 +128,7 @@ def cluster_member_rows(conn: sqlite3.Connection, case_id: str, cluster_id: int)
 def cluster_subgraph(
     conn: sqlite3.Connection, case_id: str, cluster_id: int, threshold: float
 ) -> nx.Graph:
-    g = load_graph(conn, case_id, threshold)
-    members = conn.execute(
-        """
-        SELECT a.market, a.alias
-        FROM clusters c
-        JOIN aliases a ON a.id = c.alias_id
-        WHERE c.case_id = ? AND c.cluster_id = ?
-        """,
-        (case_id, cluster_id),
-    ).fetchall()
-    nodes = {node_key(r["market"], r["alias"]) for r in members}
-    return g.subgraph(present_nodes(g, list(nodes))).copy()
+    return load_cluster_graph(conn, case_id, cluster_id, threshold)
 
 
 def search_corpus(conn: sqlite3.Connection, query: str, *, limit: int = 50) -> list[dict]:
@@ -148,6 +138,7 @@ def search_corpus(conn: sqlite3.Connection, query: str, *, limit: int = 50) -> l
     like = f"%{q}%"
     hits: list[dict] = []
     seen: set[tuple] = set()
+    identifierish = len(q) >= 16 and " " not in q
 
     def add(row: sqlite3.Row, hit_type: str, field: str) -> None:
         keys = set(row.keys())
@@ -181,7 +172,45 @@ def search_corpus(conn: sqlite3.Connection, query: str, *, limit: int = 50) -> l
             }
         )
 
-    for r in conn.execute(
+    if not identifierish:
+        # Resolve exact handles before any broad evidence/body scan. This is
+        # the common judge path and uses the existing market/alias index.
+        alias_resolved = False
+        for r in conn.execute(
+            "SELECT market, alias FROM aliases WHERE alias = ? COLLATE NOCASE LIMIT ?",
+            (q, limit),
+        ):
+            alias_resolved = True
+            for post in conn.execute(
+                """
+                SELECT p.id AS post_id, p.market, p.msg_id, p.alias, p.body,
+                       p.source_archive, p.scrape_date, p.source_member_path, p.content_sha256
+                FROM posts p
+                WHERE p.market = ? AND p.alias = ?
+                LIMIT ?
+                """,
+                (r["market"], r["alias"], limit - len(hits)),
+            ):
+                add(post, "post", "body")
+                if len(hits) >= limit:
+                    break
+            if len(hits) >= limit:
+                break
+        if alias_resolved and hits:
+            return hits[:limit]
+
+    evidence_sql = (
+        """
+        SELECT e.kind, e.value, e.context, a.market, a.alias, p.id AS post_id, p.msg_id,
+               p.source_archive, p.scrape_date, p.source_member_path, p.content_sha256
+        FROM evidence e
+        JOIN aliases a ON a.id = e.alias_id
+        LEFT JOIN posts p ON p.id = e.post_id
+        WHERE e.value = ?
+        LIMIT ?
+        """
+        if identifierish
+        else
         """
         SELECT e.kind, e.value, e.context, a.market, a.alias, p.id AS post_id, p.msg_id,
                p.source_archive, p.scrape_date, p.source_member_path, p.content_sha256
@@ -190,37 +219,24 @@ def search_corpus(conn: sqlite3.Connection, query: str, *, limit: int = 50) -> l
         LEFT JOIN posts p ON p.id = e.post_id
         WHERE e.value LIKE ? OR e.context LIKE ?
         LIMIT ?
-        """,
-        (like, like, limit),
-    ):
+        """
+    )
+    evidence_params = (q, limit) if identifierish else (like, like, limit)
+    for r in conn.execute(evidence_sql, evidence_params):
         add(r, "evidence", "value")
 
-    # ponytail: 900k-row body LIKE is demo-lethal for fingerprints/wallets; skip when the query is an identifier.
-    identifierish = len(q) >= 16 and " " not in q
     if not identifierish:
         for r in conn.execute(
             """
             SELECT p.id AS post_id, p.market, p.msg_id, p.alias, p.body,
                    p.source_archive, p.scrape_date, p.source_member_path, p.content_sha256
             FROM posts p
-            WHERE p.alias LIKE ? OR p.body LIKE ?
-            LIMIT ?
-            """,
-            (like, like, limit),
-        ):
-            add(r, "post", "body")
-    elif len(hits) < limit:
-        for r in conn.execute(
-            """
-            SELECT p.id AS post_id, p.market, p.msg_id, p.alias, p.body,
-                   p.source_archive, p.scrape_date, p.source_member_path, p.content_sha256
-            FROM posts p
-            WHERE p.alias LIKE ?
+            WHERE p.body LIKE ?
             LIMIT ?
             """,
             (like, limit - len(hits)),
         ):
-            add(r, "post", "alias")
+            add(r, "post", "body")
 
     return hits[:limit]
 
@@ -427,34 +443,54 @@ def write_report_json(db: sqlite3.Connection | str | Path, case_id: str, path: P
 
 
 def _cluster_png(sub: nx.Graph, path: Path) -> None:
-    import matplotlib.pyplot as plt
-
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(6.5, 4.5), facecolor="#0a0e17")
-    ax.set_facecolor("#0a0e17")
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return
+
+    width, height = 900, 620
+    image = Image.new("RGB", (width, height), "#0a0e17")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
     if sub.number_of_nodes() == 0:
-        ax.text(0.5, 0.5, "empty cluster", ha="center", va="center", color="#8b95a5")
-        ax.axis("off")
+        draw.text((width // 2 - 35, height // 2), "empty cluster", fill="#8b95a5", font=font)
     else:
-        pos = nx.spring_layout(sub, seed=0)
-        markets = {sub.nodes[n].get("market", "") for n in sub.nodes}
-        palette = ["#c9a227", "#3d8bfd", "#2ecc71", "#e67e22", "#9b59b6"]
-        color_map = {m: palette[i % len(palette)] for i, m in enumerate(sorted(markets))}
-        node_colors = [color_map.get(sub.nodes[n].get("market", ""), "#888") for n in sub.nodes]
-        nx.draw_networkx_nodes(sub, pos, node_color=node_colors, node_size=280, ax=ax)
-        cross = [
-            (u, v)
-            for u, v, d in sub.edges(data=True)
-            if d.get("cross_market")
-        ]
-        same = [(u, v) for u, v in sub.edges() if (u, v) not in cross and (v, u) not in cross]
-        nx.draw_networkx_edges(sub, pos, edgelist=same, edge_color="#5d6d7e", width=1.0, ax=ax)
-        nx.draw_networkx_edges(sub, pos, edgelist=cross, edge_color="#d35400", width=2.2, ax=ax)
-        labels = {n: n.split(":", 1)[-1][:12] for n in sub.nodes}
-        nx.draw_networkx_labels(sub, pos, labels=labels, font_size=6, font_color="#eef2f7", ax=ax)
-        ax.axis("off")
-    fig.savefig(path, dpi=130, bbox_inches="tight", facecolor=fig.get_facecolor())
-    plt.close(fig)
+        pos = nx.circular_layout(sub) if sub.number_of_nodes() > 80 else nx.spring_layout(sub, seed=0)
+        xs = [p[0] for p in pos.values()]
+        ys = [p[1] for p in pos.values()]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        span_x = max(max_x - min_x, 1e-9)
+        span_y = max(max_y - min_y, 1e-9)
+
+        def point(n: str) -> tuple[int, int]:
+            x, y = pos[n]
+            return (
+                int(40 + (x - min_x) * (width - 80) / span_x),
+                int(40 + (max_y - y) * (height - 80) / span_y),
+            )
+
+        for a, b, data in sub.edges(data=True):
+            draw.line(
+                [point(a), point(b)],
+                fill="#d35400" if data.get("cross_market") else "#5d6d7e",
+                width=3 if data.get("cross_market") else 1,
+            )
+        colors = {
+            "silkroad1": "#c9a227",
+            "silkroad2": "#3d8bfd",
+            "thehub": "#2ecc71",
+            "nucleus": "#e67e22",
+            "cannabisroad3": "#9b59b6",
+        }
+        radius = 7 if sub.number_of_nodes() <= 40 else 4
+        for n, data in sub.nodes(data=True):
+            x, y = point(n)
+            fill = colors.get(data.get("market", ""), "#1abc9c")
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill)
+            draw.text((x + radius + 2, y - 6), n.split(":", 1)[-1][:16], fill="#eef2f7", font=font)
+    image.save(path, format="PNG")
 
 
 def write_report_pdf(db: sqlite3.Connection | str | Path, case_id: str, path: Path) -> Path:

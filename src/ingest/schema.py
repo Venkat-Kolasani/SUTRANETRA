@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS aliases (
   is_vendor INTEGER DEFAULT 0,
   UNIQUE(market, alias)
 );
+CREATE INDEX IF NOT EXISTS idx_aliases_alias_nocase ON aliases(alias COLLATE NOCASE, market);
 
 CREATE TABLE IF NOT EXISTS evidence (
   id INTEGER PRIMARY KEY,
@@ -53,6 +54,8 @@ CREATE TABLE IF NOT EXISTS evidence (
   context TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_value ON evidence(kind, value);
+CREATE INDEX IF NOT EXISTS idx_evidence_value_text ON evidence(value);
+CREATE INDEX IF NOT EXISTS idx_evidence_alias_kind_value ON evidence(alias_id, kind, value, post_id);
 
 -- Investigation runs
 CREATE TABLE IF NOT EXISTS cases (
@@ -99,6 +102,7 @@ CREATE TABLE IF NOT EXISTS opsec_findings (
   detail TEXT,
   created_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_pair_scores_case_confidence ON pair_scores(case_id, confidence);
 CREATE INDEX IF NOT EXISTS idx_opsec_case ON opsec_findings(case_id);
 """
 

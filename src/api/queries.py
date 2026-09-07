@@ -23,7 +23,8 @@ from src.llm.polish import polish_explanation
 from src.opsec.scanner import list_findings
 from src.pipeline.case import get_case
 
-DEMO_PAIR = ("nihilist23", "nxxxxxxx23")
+DEMO_PAIR = ("NW Nugz", "nw nugz")
+_CLUSTER_HTML_CACHE: dict[tuple[str, int, float, int], str] = {}
 
 
 def json_safe(obj: Any) -> Any:
@@ -81,10 +82,18 @@ def cluster_payload(conn: sqlite3.Connection, case_id: str, cluster_id: int, thr
     shared = shared_evidence_with_lineage(conn, alias_ids) if alias_ids else []
     html = ""
     if members:
-        sub = cluster_subgraph(conn, case_id, cluster_id, threshold)
-        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as tmp:
-            render_pyvis(sub, Path(tmp.name), height="480px")
-            html = Path(tmp.name).read_text(encoding="utf-8")
+        revision = int(conn.execute("PRAGMA data_version").fetchone()[0])
+        cache_key = (case_id, cluster_id, threshold, revision)
+        html = _CLUSTER_HTML_CACHE.get(cache_key, "")
+        if not html:
+            sub = cluster_subgraph(conn, case_id, cluster_id, threshold)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                path = Path(tmpdir) / "cluster.html"
+                render_pyvis(sub, path, height="480px")
+                html = path.read_text(encoding="utf-8")
+            _CLUSTER_HTML_CACHE[cache_key] = html
+            if len(_CLUSTER_HTML_CACHE) > 12:
+                _CLUSTER_HTML_CACHE.pop(next(iter(_CLUSTER_HTML_CACHE)))
     return {"members": members, "shared": shared, "graph_html": html}
 
 

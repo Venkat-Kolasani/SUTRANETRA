@@ -61,6 +61,23 @@
     .mono { font-family: "IBM Plex Mono", monospace; font-size: .78rem; }
     .error { color: #e74c3c; }
     .quote { padding: .85rem 1rem; border-radius: 12px; background: rgba(61,139,253,.08); border: 1px solid rgba(61,139,253,.18); }
+    .status-pill { display: inline-flex; align-items: center; gap: .45rem; padding: .32rem .6rem; border-radius: 999px; border: 1px solid rgba(46,204,113,.24); background: rgba(46,204,113,.08); color: #b9f6cc; font-size: .76rem; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #2ecc71; box-shadow: 0 0 10px rgba(46,204,113,.65); }
+    .panel { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 14px; background: rgba(18,24,38,.58); }
+    .error-card { border-color: rgba(231,76,60,.28); background: rgba(231,76,60,.06); }
+    .eyebrow { color: var(--gold); font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; }
+    .export-bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 1rem; padding: .75rem .9rem; border: 1px solid rgba(201,162,39,.18); border-radius: 12px; background: rgba(201,162,39,.05); }
+    .export-links { display: flex; gap: .85rem; flex-wrap: wrap; font-family: "IBM Plex Mono", monospace; font-size: .78rem; }
+    .graph-note { color: var(--muted); font-size: .78rem; margin: .55rem 0 .7rem; }
+    .guide { padding: .7rem .85rem; margin: .65rem 0 .9rem; border: 1px solid rgba(61,139,253,.18); border-radius: 10px; background: rgba(61,139,253,.06); }
+    .guide strong { display: block; color: var(--text); margin-bottom: .2rem; }
+    .guide .muted { font-size: .8rem; line-height: 1.5; }
+    .graph-legend { display: flex; flex-wrap: wrap; gap: .45rem .8rem; align-items: center; margin: .55rem 0 .15rem; font-size: .76rem; }
+    .legend-label { color: var(--muted); margin-right: .15rem; }
+    .legend-item { display: inline-flex; align-items: center; gap: .28rem; white-space: nowrap; }
+    .swatch { width: 10px; height: 10px; display: inline-block; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255,255,255,.2); }
+    .edge-swatch { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+    .trail-legend { margin-top: .35rem; }
     .trail-step { display: flex; gap: .8rem; align-items: flex-start; }
     .trail-badge {
       width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
@@ -85,7 +102,8 @@
       <p class="tag">The eye that follows the hidden threads.</p>
       <label for="case">Active case</label>
       <select id="case"></select>
-      <p class="muted" style="font-size:.8rem">Templates and structured views always work. Neo4j / LLM are optional.</p>
+      <div class="status-pill"><span class="status-dot"></span><span id="llm-status">Case review ready</span></div>
+      <p class="muted" style="font-size:.8rem">Evidence-led attribution workspace</p>
       <p class="muted mono" id="health"></p>
     </aside>
     <main class="main">
@@ -102,18 +120,46 @@
       alias: ["◆", "#c9a227"], post: ["▸", "#3d8bfd"], evidence: ["⬡", "#2ecc71"],
       score: ["◎", "#e8d48a"], opsec: ["⚠", "#e74c3c"], ct_cert: ["▣", "#9b59b6"], ct_domain: ["↗", "#e67e22"],
     };
-    const state = { cases: [], case: null, view: "Search", aliases: [], clusters: [] };
+    const state = { cases: [], case: null, view: "Search", aliases: [], clusters: [], health: null };
+    const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : "";
+    const apiUrl = (path) => `${API_BASE}${path}`;
 
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const rich = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>");
     const fmt = (n) => (n == null || n === "" ? "—" : Number(n).toLocaleString());
     const num = (n, d = 3) => (n == null || n === "" ? "—" : Number(n).toFixed(d));
+    const MARKET_COLORS = [
+      ["silkroad1", "#c9a227"], ["silkroad2", "#3d8bfd"], ["thehub", "#2ecc71"],
+      ["nucleus", "#e67e22"], ["cannabisroad3", "#9b59b6"],
+    ];
+    const guide = (title, body) => `<div class="guide"><strong>${title}</strong><div class="muted">${body}</div></div>`;
+    const graphLegend = () => `<div class="graph-legend">
+      <span class="legend-label">Graph key:</span>
+      ${MARKET_COLORS.map(([market, color]) => `<span class="legend-item"><i class="swatch" style="background:${color}"></i>${market} node</span>`).join("")}
+      <span class="legend-item"><i class="edge-swatch" style="background:#d35400"></i>cross-market edge</span>
+      <span class="legend-item"><i class="edge-swatch" style="background:#5d6d7e"></i>same-market edge</span>
+    </div>`;
+    const trailLegend = () => `<div class="graph-legend trail-legend">
+      <span class="legend-label">Trail key:</span>
+      <span class="legend-item" style="color:#c9a227">◆ alias</span><span class="legend-item" style="color:#3d8bfd">▸ post</span>
+      <span class="legend-item" style="color:#2ecc71">⬡ evidence</span><span class="legend-item" style="color:#e8d48a">◎ score</span>
+      <span class="legend-item" style="color:#e74c3c">⚠ OpSec</span><span class="legend-item" style="color:#9b59b6">▣ CT certificate</span>
+      <span class="legend-item" style="color:#e67e22">↗ CT sibling</span>
+    </div>`;
 
     async function api(path, opts) {
-      const r = await fetch(path, opts);
-      if (!r.ok) throw new Error(`${r.status} ${path}`);
-      const ct = r.headers.get("content-type") || "";
-      return ct.includes("application/json") ? r.json() : r.text();
+      try {
+        const r = await fetch(apiUrl(path), opts);
+        if (!r.ok) throw new Error(`${r.status} ${path}`);
+        const ct = r.headers.get("content-type") || "";
+        return ct.includes("application/json") ? r.json() : r.text();
+      } catch (err) {
+        if (err instanceof TypeError) {
+          throw new Error(`The local SUTRANETRA service is unavailable at ${apiUrl("/")}.`);
+        }
+        throw err;
+      }
     }
 
     function table(rows, keys) {
@@ -130,10 +176,11 @@
       $("header").innerHTML = `
         <div class="hero">
           <div>
+            <div class="eyebrow">Case file / active investigation</div>
             <h1>SUTRANETRA</h1>
             <p class="tag" style="margin:0.15rem 0 0">The eye that follows the hidden threads.</p>
           </div>
-          <div class="muted">case ${esc(c.case_id)} · ${esc(c.status)}</div>
+          <div style="text-align:right"><div class="status-pill"><span class="status-dot"></span>${esc(state.health?.llm?.reachable ? "Groq phrasing online" : "Case review ready")}</div><div class="muted" style="margin-top:.45rem">case ${esc(c.case_id)} · ${esc(c.status)}</div></div>
         </div>
         <div class="metrics">
           <div class="card"><div class="metric-label">Threshold</div><div class="metric-value">${esc(c.threshold)}</div></div>
@@ -143,7 +190,7 @@
           <div class="card"><div class="metric-label">Markets</div><div class="metric-value">${(snap.markets || []).length}</div></div>
         </div>
         <div class="framing">${esc(FRAMING)}</div>
-        <p class="muted">config_hash ${esc((c.config_hash || "").slice(0, 12))}… · ${esc((snap.markets || []).join(", "))}</p>
+        <p class="muted mono">config ${esc((c.config_hash || "").slice(0, 12))}… · ${esc((snap.markets || []).join(", "))}</p>
       `;
       $("tabs").innerHTML = VIEWS.map((v) => `<button data-view="${v}" class="${v === state.view ? "on" : ""}">${v}</button>`).join("");
       $("tabs").onclick = (e) => {
@@ -157,11 +204,11 @@
 
     function exports() {
       const id = state.case.case_id;
-      return `<p class="exports muted">Case exports:
-        <a href="/cases/${id}/export/csv">clusters.csv</a>
-        <a href="/cases/${id}/export/json">report.json</a>
-        <a href="/cases/${id}/export/pdf">report.pdf</a>
-      </p>`;
+      return `<div class="export-bar"><div><strong>Case exports</strong><div class="muted" style="font-size:.78rem">Stable, case-scoped evidence files</div></div><div class="export-links">
+        <a href="${apiUrl(`/cases/${id}/export/csv`)}">clusters.csv</a>
+        <a href="${apiUrl(`/cases/${id}/export/json`)}">report.json</a>
+        <a href="${apiUrl(`/cases/${id}/export/pdf`)}">report.pdf</a>
+      </div></div>`;
     }
 
     async function renderView() {
@@ -183,6 +230,7 @@
     function renderSearch(view, id) {
       view.innerHTML = `
         <h3>Evidence search</h3>
+        ${guide("What this page tells you", "Searches the stored corpus for a handle, wallet, PGP fingerprint, onion address, or domain. Every result keeps its source archive, scrape date, member path, and content hash so a judge can see where it came from. A hit is an investigative lead, not an identity verdict.")}
         <p class="muted">Full-text over extracted evidence and posts, with archive-member lineage.</p>
         <div class="row">
           <div><label>Query</label><input id="q" placeholder="PGP fingerprint, BTC address, onion, or handle" /></div>
@@ -209,13 +257,19 @@
     async function renderClusters(view, id) {
       const clusters = await api(`/cases/${id}/clusters`);
       state.clusters = clusters;
-      const preferred = clusters.find((c) => c.cluster_id === 1) || clusters.find((c) => c.n_markets >= 3) || clusters[0];
+      if (!clusters.length) {
+        view.innerHTML = `<div class="panel"><div class="eyebrow">Graph stage</div><h3>Graph not available yet</h3><p class="muted">Case ${esc(state.case?.case_id || id)} is ${esc(state.case?.status || "not ready")}. Run the graph stage before opening cluster review.</p></div>${exports()}`;
+        return;
+      }
+      const multi = clusters.filter((c) => c.n_markets >= 3);
+      const preferred = multi.sort((a, b) => a.n_members - b.n_members || b.confidence - a.confidence)[0] || clusters[0];
       view.innerHTML = `
         <h3>Actor clusters</h3>
-        <p class="muted">${clusters.length} clusters. Orange edges in the graph are cross-market.</p>
+        ${guide("How to read this page", `${clusters.length} clusters means ${clusters.length} connected components in the thresholded pair graph—not ${clusters.length} confirmed people. ${multi.length} components contain aliases from three or more markets. The selected score is the strongest stored pair confidence in that component; it is not a probability of identity.`)}
+        <p class="muted">The recommended demo cluster is preselected because it is cross-market and concise. Larger clusters are valid, but intentionally denser.</p>
         <label>Select cluster</label>
         <select id="cluster">${clusters.map((c) =>
-          `<option value="${c.cluster_id}" ${c.cluster_id === preferred?.cluster_id ? "selected" : ""}>#${c.cluster_id} · ${c.n_members} aliases · ${c.n_markets} markets · conf ${Number(c.confidence).toFixed(2)}</option>`
+          `<option value="${c.cluster_id}" ${c.cluster_id === preferred?.cluster_id ? "selected" : ""}>#${c.cluster_id} · ${c.n_members} aliases · ${c.n_markets} markets · max score ${Number(c.confidence).toFixed(2)}</option>`
         ).join("")}</select>
         <div id="cdetail" style="margin-top:1rem"></div>
         ${exports()}
@@ -224,11 +278,12 @@
         const cid = $("cluster").value;
         $("cdetail").innerHTML = `<p class="muted">Loading cluster ${esc(cid)}…</p>`;
         const p = await api(`/cases/${id}/clusters/${cid}`);
+        const dense = (p.members || []).length > 80
+          ? guide("Why this graph looks dense", `Cluster #${esc(cid)} is a valid large connected component with ${(p.members || []).length} aliases. The circular layout keeps every member visible, so many thin lines are expected. For the clearest judge walkthrough, use the preselected recommended cluster #${esc(preferred?.cluster_id)}.`)
+          : "";
         $("cdetail").innerHTML = `
-          <h4>Members</h4>${table(p.members)}
-          <h4>Shared evidence (with lineage)</h4>${table(p.shared)}
-          <h4>Cluster graph</h4>
-          <iframe class="graph" title="cluster graph"></iframe>
+          ${dense}<div class="panel"><div class="eyebrow">Relationship map</div><h4 style="margin:.25rem 0 0">Cluster graph</h4><div class="graph-note">Each circle is a pseudonymous alias. Its colour identifies the marketplace. A line is a stored pair score at or above the case threshold (${esc(state.case?.threshold)}); its thickness highlights cross-market links. Hover a node or line for the exact label and score; use the navigation controls, wheel, and drag to explore.</div>${graphLegend()}<iframe class="graph" title="cluster graph"></iframe></div>
+          <div class="row" style="margin-top:1rem"><div class="panel"><h4>Members</h4><p class="muted">The aliases represented by this connected component.</p>${table(p.members)}</div><div class="panel"><h4>Shared evidence with lineage</h4><p class="muted">Identifiers observed for more than one member, with the source record that carried them.</p>${table(p.shared)}</div></div>
         `;
         const frame = $("cdetail").querySelector("iframe");
         frame.srcdoc = p.graph_html || "<p style='color:#8b95a5;padding:1rem;font-family:sans-serif'>No graph.</p>";
@@ -240,11 +295,12 @@
     async function renderPair(view, id) {
       const aliases = await api(`/cases/${id}/aliases`);
       state.aliases = aliases;
-      const a0 = aliases.find((a) => a.label.endsWith(":nihilist23")) || aliases[0];
-      const b0 = aliases.find((a) => a.label.endsWith(":nxxxxxxx23")) || aliases[1];
+      const a0 = aliases.find((a) => a.label.endsWith(":NW Nugz")) || aliases[0];
+      const b0 = aliases.find((a) => a.label.endsWith(":nw nugz")) || aliases[1];
       const opts = (sel) => aliases.map((a) => `<option value="${a.alias_id}" ${a.alias_id === sel?.alias_id ? "selected" : ""}>${esc(a.label)}</option>`).join("");
       view.innerHTML = `
         <h3>Pair inspector</h3>
+        ${guide("What this page tells you", "Score meanings: S_char = writing-style similarity from character patterns. S_embed = topic or semantic similarity, not writing style. S_hard = shared extracted evidence such as a PGP fingerprint or wallet. S_time = similarity in activity timing; a dash means there was not enough timestamped data. Confidence is the learned fusion score used for graph links, not an identity verdict.")}
         <div class="row">
           <div><label>Alias A</label><select id="a">${opts(a0)}</select></div>
           <div><label>Alias B</label><select id="b">${opts(b0)}</select></div>
@@ -278,10 +334,16 @@
 
     async function renderTrail(view, id) {
       if (!state.clusters.length) state.clusters = await api(`/cases/${id}/clusters`);
-      const preferred = state.clusters.find((c) => c.cluster_id === 1) || state.clusters[0];
+      if (!state.clusters.length) {
+        view.innerHTML = `<div class="panel"><div class="eyebrow">Evidence Trail</div><h3>Trail not available yet</h3><p class="muted">This case has no computed graph clusters. Run the graph stage before opening the evidence trail.</p></div>${exports()}`;
+        return;
+      }
+      const multi = state.clusters.filter((c) => c.n_markets >= 3);
+      const preferred = multi.sort((a, b) => a.n_members - b.n_members || b.confidence - a.confidence)[0] || state.clusters[0];
       view.innerHTML = `
         <h3>Evidence Trail</h3>
-        <p class="muted">Deterministic chain from stored evidence. Missing OpSec/CT steps are omitted, never invented.</p>
+        ${guide("What this page tells you", "This is the ordered, deterministic chain behind a result: alias → source post → extracted evidence → second alias → fused score → any observed OpSec or Certificate Transparency step. The trail reads only stored rows; if a step was not observed, it is left out.")}
+        ${trailLegend()}
         <label>Cluster</label>
         <select id="tcluster">${state.clusters.map((c) =>
           `<option value="${c.cluster_id}" ${c.cluster_id === preferred?.cluster_id ? "selected" : ""}>#${c.cluster_id} · ${c.n_members} aliases</option>`
@@ -312,6 +374,7 @@
       const sibs = findings.filter((f) => f.finding_kind === "ct_sibling").map((f) => f.value);
       view.innerHTML = `
         <h3>OpSec findings</h3>
+        ${guide("What this page tells you", "Shows infrastructure observations from the team-owned localhost demonstration target and cached Certificate Transparency pivots. These are technical leads to investigate next; they do not prove who controls an alias or domain.")}
         <p class="muted">Stored results from the localhost demo scan. Live scanning stays on the CLI / local tools.</p>
         <p>${findings.length} rows</p>
         ${table(findings, ["finding_kind", "value", "target", "detail", "created_at"])}
@@ -323,6 +386,7 @@
     function renderInvestigator(view, id) {
       view.innerHTML = `
         <h3>Investigator</h3>
+        ${guide("What this page tells you", "Ask a question in plain English about the active case. Groq phrases facts already stored by SUTRANETRA; it does not score aliases, change the database, or issue an identity verdict. Use the other tabs and provenance rows to verify the answer.")}
         <p class="muted">Natural-language query over stored results. The model does not score aliases and does not issue identity verdicts.</p>
         <div class="chat" id="chat"></div>
         <label>Question</label>
@@ -341,8 +405,8 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ case_id: id, question }),
           });
-          const text = ans.degraded ? (ans.text || "LLM unreachable — templates and structured views still work.") : ans.text;
-          chat.insertAdjacentHTML("beforeend", `<div class="bubble"><strong>SUTRANETRA</strong> <span class="muted">${esc(ans.model || "")}</span><div>${esc(text)}</div></div>`);
+          const text = ans.degraded ? (ans.text || "Live phrasing is unavailable for this session. The stored evidence trail and case views remain available.") : ans.text;
+          chat.insertAdjacentHTML("beforeend", `<div class="bubble"><strong>SUTRANETRA</strong> <span class="muted">${esc(ans.model || "")}</span><div>${rich(text)}</div></div>`);
         } catch (err) {
           chat.insertAdjacentHTML("beforeend", `<div class="bubble error">${esc(err.message)}</div>`);
         }
@@ -351,7 +415,9 @@
 
     async function boot() {
       const h = await api("/health");
-      $("health").textContent = `profile ${h.profile} · db ${h.db_exists ? "ok" : "missing"}`;
+      state.health = h;
+      $("health").textContent = `profile ${h.profile} · db ${h.db_exists ? "ready" : "missing"}`;
+      $("llm-status").textContent = h.llm?.reachable ? "Groq phrasing online" : "Case review ready";
       state.cases = await api("/cases");
       const sel = $("case");
       sel.innerHTML = state.cases.map((c) => `<option value="${esc(c.case_id)}">${esc(c.case_id)} · ${esc(c.status)}</option>`).join("");
@@ -366,7 +432,9 @@
       sel.onchange = loadCase;
       await loadCase();
     }
-    boot().catch((err) => { $("view").innerHTML = `<p class="error">${esc(err.message)}</p>`; });
+    boot().catch((err) => {
+      $("view").innerHTML = `<div class="panel error-card"><div class="eyebrow">Local service</div><h3>Connect to the SUTRANETRA API</h3><p class="error">${esc(err.message)}</p><p class="muted">Start the local API, then reload this page. The file view now targets the same local service automatically.</p><a href="${apiUrl("/")}">Open the local judge UI</a></div>`;
+    });
   </script>
 </body>
 </html>

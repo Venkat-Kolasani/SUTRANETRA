@@ -215,26 +215,70 @@ def explain_polish(body: PolishBody):
     return {"sentence": polish_explanation(body.evidence, _cfg())}
 
 
-@app.get("/cases/{case_id}/export/{kind}")
-def export_case(case_id: str, kind: str):
-    from fastapi.responses import FileResponse
+def _export_candidates(case: dict, out_dir: Path, kind: str) -> list[Path]:
+    stable = {
+        "csv": out_dir / "clusters.csv",
+        "json": out_dir / "report.json",
+        "pdf": out_dir / "report.pdf",
+    }[kind]
+    legacy = {
+        "csv": out_dir / "api_clusters.csv",
+        "json": out_dir / "api_report.json",
+        "pdf": out_dir / "api_report.pdf",
+    }[kind]
+    candidates = [stable, legacy]
+    if kind == "pdf":
+        candidates.extend((out_dir / "trail_report.pdf", out_dir / "dod_verify" / "report.pdf"))
+        if case.get("report_path") and Path(case["report_path"]).suffix.lower() == ".pdf":
+            candidates.append(Path(case["report_path"]))
+    return candidates
 
+
+def _fresh_export(path: Path, db_path: str) -> bool:
+    try:
+        return path.is_file() and path.stat().st_mtime_ns >= Path(db_path).stat().st_mtime_ns
+    except OSError:
+        return False
+
+
+@app.get("/cases/{case_id}/exports")
+def export_status(case_id: str):
     cfg = _cfg()
     db = _db_path(cfg)
+    case = q.case_row(db, case_id)
+    if not case:
+        raise HTTPException(404, "unknown case")
+    out_dir = Path("data/exports") / case_id
+    result = {}
+    for kind in ("csv", "json", "pdf"):
+        path = next((p for p in _export_candidates(case, out_dir, kind) if _fresh_export(p, db)), None)
+        result[kind] = {
+            "ready": path is not None,
+            "bytes": path.stat().st_size if path else 0,
+        }
+    return result
+
+
+@app.get("/cases/{case_id}/export/{kind}")
+def export_case(case_id: str, kind: str):
+    cfg = _cfg()
+    db = _db_path(cfg)
+    case = q.case_row(db, case_id)
+    if not case:
+        raise HTTPException(404, "unknown case")
     out_dir = Path("data/exports") / case_id
     out_dir.mkdir(parents=True, exist_ok=True)
-    if kind == "csv":
-        path = out_dir / "api_clusters.csv"
-        write_clusters_csv(db, case_id, path)
-        media = "text/csv"
-    elif kind == "json":
-        path = out_dir / "api_report.json"
-        write_report_json(db, case_id, path)
-        media = "application/json"
-    elif kind == "pdf":
-        path = out_dir / "api_report.pdf"
-        write_report_pdf(db, case_id, path)
-        media = "application/pdf"
-    else:
+    if kind not in ("csv", "json", "pdf"):
         raise HTTPException(404, "kind must be csv|json|pdf")
-    return FileResponse(path, media_type=media, filename=path.name)
+    path = next((p for p in _export_candidates(case, out_dir, kind) if _fresh_export(p, db)), None)
+    if path is None:
+        path = out_dir / {"csv": "clusters.csv", "json": "report.json", "pdf": "report.pdf"}[kind]
+        if kind == "csv":
+            write_clusters_csv(db, case_id, path)
+        elif kind == "json":
+            write_report_json(db, case_id, path)
+        else:
+            write_report_pdf(db, case_id, path)
+    media = {"csv": "text/csv", "json": "application/json", "pdf": "application/pdf"}[kind]
+    filename = {"csv": "clusters.csv", "json": "report.json", "pdf": "report.pdf"}[kind]
+    return FileResponse(path, media_type=media, filename=filename)

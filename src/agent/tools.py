@@ -23,6 +23,7 @@ TOOL_NAMES = (
     "score_pair",
     "evidence_trail",
     "get_case",
+    "top_aliases",
     "alias_timeline",
     "ct_pivot",
     "opsec_scan",
@@ -283,6 +284,43 @@ def make_tools(db_path: str | Path, case_id: str, cfg: dict) -> list[BaseTool]:
             conn.close()
 
     @tool
+    def top_aliases(limit: int = 5) -> dict:
+        """Return aliases with the most stored posts in the active case graph.
+
+        Use for questions such as "which alias has the most records", "most active
+        alias", or "highest post count". Counts are read from the immutable posts
+        table for aliases present in this case's persisted graph; this never scores
+        aliases and never makes an identity claim.
+        """
+        conn = open_ro(db_path)
+        try:
+            limit = max(1, min(int(limit), 20))
+            rows = _rows(
+                conn.execute(
+                    """
+                    SELECT c.cluster_id, a.id AS alias_id, a.market, a.alias,
+                           COUNT(p.id) AS n_posts
+                    FROM (SELECT DISTINCT cluster_id, alias_id
+                          FROM clusters WHERE case_id = ?) c
+                    JOIN aliases a ON a.id = c.alias_id
+                    LEFT JOIN posts p ON p.market = a.market AND p.alias = a.alias
+                    GROUP BY c.cluster_id, a.id, a.market, a.alias
+                    ORDER BY n_posts DESC, a.market, a.alias
+                    LIMIT ?
+                    """,
+                    (case_id, limit),
+                )
+            )
+            return {
+                "case_id": case_id,
+                "metric": "stored post count",
+                "aliases": rows,
+                "n_aliases": len(rows),
+            }
+        finally:
+            conn.close()
+
+    @tool
     def alias_timeline(alias: str, market: str) -> dict:
         """Posting activity over time, hour-of-day histogram, estimated UTC offset.
 
@@ -399,6 +437,7 @@ def make_tools(db_path: str | Path, case_id: str, cfg: dict) -> list[BaseTool]:
         score_pair,
         evidence_trail,
         get_case,
+        top_aliases,
         alias_timeline,
         ct_pivot,
         opsec_scan,

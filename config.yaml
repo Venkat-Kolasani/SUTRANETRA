@@ -1,4 +1,4 @@
-# SUTRANETRA — default profile is dev (no Neo4j, no LLM polish required).
+# SUTRANETRA — default profile is dev (Neo4j off; Groq phrasing enabled when a key is present).
 # Override: SUTRANETRA_PROFILE=demo|cloud. Cloud is the public judge path.
 # Community Edition 2026.07.1: CREATE USER works; GRANT ROLE reader does not
 # (UnsupportedAdministrationCommand). Reader access is a no-write code path,
@@ -51,8 +51,8 @@ profiles:
       password: ""
       database: neo4j
     llm:
-      # yaml default off (pipeline CLI). Local UI: SUTRANETRA_LLM_ENABLED=1 + GROQ_API_KEY.
-      enabled: false
+      # Groq is the judge-demo phrasing provider; the key is supplied via .env.
+      enabled: true
       provider: groq
       model: openai/gpt-oss-20b
 

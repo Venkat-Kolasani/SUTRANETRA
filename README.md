@@ -32,7 +32,7 @@ python -m src.ingest.schema
 
 This creates `data/db/attrib.sqlite` with the full corpus + cases schema (`posts`, `aliases`, `evidence`, `cases`, `pair_scores`, `clusters`, `opsec_findings`). Re-running the command is safe (idempotent).
 
-Configuration lives in `config.yaml` (`dev` profile by default: Neo4j off, LLM polish off in yaml). For a local Groq LLM (investigator + explanation polish, no deploy): copy `.env.example` to `.env`, set `GROQ_API_KEY` and `SUTRANETRA_LLM_ENABLED=1`. Use `SUTRANETRA_PROFILE=cloud` only for the public judge path later.
+Configuration lives in `config.yaml` (`dev` profile by default: Neo4j off, Groq phrasing on when `GROQ_API_KEY` is present). For the local judge demo (investigator + explanation polish): copy `.env.example` to `.env`, set `GROQ_API_KEY`, and launch with the repository root on `PYTHONPATH`. Use `SUTRANETRA_PROFILE=cloud` only for the public judge path later.
 
 ## Local website + LLM (no deploy)
 
@@ -49,7 +49,7 @@ uvicorn src.api.app:app --host 127.0.0.1 --port 8000
 streamlit run src/ui/app.py
 ```
 
-Missing key → templates still work; investigator degrades to structured search. No Gemini: Groq is the SPEC provider and already in `src/llm/client.py`.
+If the key is unavailable, the investigator reports that live phrasing is unavailable and the evidence-led case views remain usable. No Gemini: Groq is the SPEC provider and already in `src/llm/client.py`.
 
 ## Cloud (free, remote judges)
 

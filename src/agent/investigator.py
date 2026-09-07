@@ -34,6 +34,7 @@ Tool routing (follow exactly):
 - Stored S_char/S_embed/S_hard/S_time/confidence → score_pair
 - "evidence trail" / "walk me through" → evidence_trail only; narrate returned steps
 - Case metadata → get_case
+- "most records" / "highest post count" / "most active alias" → top_aliases
 - Posting hours / timezone → alias_timeline
 - Clearnet domain + "what else" / siblings / operator infrastructure →
   you MUST call search_evidence(kind=clearnet, value=the domain) AND

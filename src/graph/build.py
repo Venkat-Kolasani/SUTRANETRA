@@ -37,6 +37,31 @@ def present_nodes(g: nx.Graph, members: list[str]) -> list[str]:
     return [n for n in members if node_attrs(g, n) is not None]
 
 
+def _add_graph_row(g: nx.Graph, row: sqlite3.Row) -> None:
+    na = node_key(row["a_market"], row["a_alias"])
+    nb = node_key(row["b_market"], row["b_alias"])
+    if na == nb:
+        return
+    g.add_node(
+        na,
+        alias_id=row["a_alias_id"],
+        market=row["a_market"],
+        alias=row["a_alias"],
+    )
+    g.add_node(
+        nb,
+        alias_id=row["b_alias_id"],
+        market=row["b_market"],
+        alias=row["b_alias"],
+    )
+    g.add_edge(
+        na,
+        nb,
+        weight=float(row["confidence"]),
+        cross_market=int(row["a_market"] != row["b_market"]),
+    )
+
+
 def load_graph(conn: sqlite3.Connection, case_id: str, threshold: float) -> nx.Graph:
     g = nx.Graph()
     rows = conn.execute(
@@ -51,29 +76,38 @@ def load_graph(conn: sqlite3.Connection, case_id: str, threshold: float) -> nx.G
         """,
         (case_id, threshold),
     )
-    for r in rows:
-        na = node_key(r["a_market"], r["a_alias"])
-        nb = node_key(r["b_market"], r["b_alias"])
-        if na == nb:
-            continue
-        g.add_node(
-            na,
-            alias_id=r["a_alias_id"],
-            market=r["a_market"],
-            alias=r["a_alias"],
-        )
-        g.add_node(
-            nb,
-            alias_id=r["b_alias_id"],
-            market=r["b_market"],
-            alias=r["b_alias"],
-        )
-        g.add_edge(
-            na,
-            nb,
-            weight=float(r["confidence"]),
-            cross_market=int(r["a_market"] != r["b_market"]),
-        )
+    for row in rows:
+        _add_graph_row(g, row)
+    return g
+
+
+def load_cluster_graph(
+    conn: sqlite3.Connection, case_id: str, cluster_id: int, threshold: float
+) -> nx.Graph:
+    """Load only edges whose two endpoints belong to one stored cluster.
+
+    Cluster pages are read paths; scanning every pair score for every selection
+    made a judge demo wait on the full case graph.
+    """
+    g = nx.Graph()
+    rows = conn.execute(
+        """
+        SELECT p.a_alias_id, p.b_alias_id, p.confidence,
+               aa.market AS a_market, aa.alias AS a_alias,
+               ab.market AS b_market, ab.alias AS b_alias
+        FROM pair_scores p
+        JOIN clusters ca
+          ON ca.case_id = p.case_id AND ca.cluster_id = ? AND ca.alias_id = p.a_alias_id
+        JOIN clusters cb
+          ON cb.case_id = p.case_id AND cb.cluster_id = ? AND cb.alias_id = p.b_alias_id
+        JOIN aliases aa ON aa.id = p.a_alias_id
+        JOIN aliases ab ON ab.id = p.b_alias_id
+        WHERE p.case_id = ? AND p.confidence >= ?
+        """,
+        (cluster_id, cluster_id, case_id, threshold),
+    )
+    for row in rows:
+        _add_graph_row(g, row)
     return g
 
 
@@ -165,14 +199,17 @@ def cluster_report(
     lookup = present or members
     stats = {"n_posts": 0, "first_ts": None, "last_ts": None}
     if lookup:
-        qmarks = ",".join("?" * len(lookup))
-        stats = conn.execute(
-            f"""
-            SELECT COUNT(*) AS n_posts, MIN(ts) AS first_ts, MAX(ts) AS last_ts
-            FROM posts WHERE (market || ':' || alias) IN ({qmarks})
-            """,
-            lookup,
-        ).fetchone()
+        pairs = [n.split(":", 1) for n in lookup if ":" in n]
+        if pairs:
+            where = " OR ".join("(market = ? AND alias = ?)" for _ in pairs)
+            params = [value for pair in pairs for value in pair]
+            stats = conn.execute(
+                f"""
+                SELECT COUNT(*) AS n_posts, MIN(ts) AS first_ts, MAX(ts) AS last_ts
+                FROM posts WHERE {where}
+                """,
+                params,
+            ).fetchone()
     markets = sorted(
         {node_attrs(g, n)["market"] for n in present}
         if present
@@ -209,7 +246,14 @@ def render_pyvis(g: nx.Graph, path: Path, *, height: str = "800px") -> None:
     if g.number_of_nodes() == 0:
         path.write_text("<html><body>empty graph</body></html>", encoding="utf-8")
         return
-    pos = nx.spring_layout(g, seed=0, k=2 / max(g.number_of_nodes(), 1) ** 0.5)
+    if g.number_of_nodes() > 80:
+        # A circular layout stays legible for the large demo component and is
+        # substantially faster than a force solve with little visual benefit.
+        pos = nx.circular_layout(g)
+    else:
+        pos = nx.spring_layout(
+            g, seed=0, k=2 / max(g.number_of_nodes(), 1) ** 0.5, iterations=35
+        )
     # in_line: Streamlit components.html is an iframe with no cwd ./lib assets.
     net = Network(
         height=height,
@@ -219,13 +263,27 @@ def render_pyvis(g: nx.Graph, path: Path, *, height: str = "800px") -> None:
         cdn_resources="in_line",
     )
     net.toggle_physics(False)
+    net.set_options(
+        json.dumps(
+            {
+                "interaction": {
+                    "hover": True,
+                    "navigationButtons": True,
+                    "keyboard": True,
+                    "zoomView": True,
+                },
+                "physics": {"enabled": False},
+                "edges": {"smooth": {"type": "continuous"}},
+            }
+        )
+    )
     for n, data in g.nodes(data=True):
         x, y = pos[n]
         market = data.get("market") or (n.split(":", 1)[0] if ":" in n else "")
         net.add_node(
             n,
             label=n.split(":", 1)[-1][:18],
-            title=n,
+            title=f"Alias: {data.get('alias', n)}\nMarket: {market}\nNode colour: {market}",
             x=float(x) * 800,
             y=float(y) * 800,
             physics=False,
@@ -238,7 +296,10 @@ def render_pyvis(g: nx.Graph, path: Path, *, height: str = "800px") -> None:
             b,
             color=CROSS_EDGE if cross else SAME_EDGE,
             width=3 if cross else 1,
-            title=f"{data['weight']:.3f}{' cross-market' if cross else ''}",
+            title=(
+                f"Pair confidence {data['weight']:.3f} · "
+                f"{'cross-market link' if cross else 'same-market link'}"
+            ),
         )
     net.save_graph(str(path))
     html = path.read_text(encoding="utf-8")

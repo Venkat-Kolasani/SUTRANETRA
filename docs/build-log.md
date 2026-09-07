@@ -434,10 +434,39 @@ Copy this block for each prompt:
 ### 2026-09-08 — local Groq LLM (not a build prompt)
 
 - **Status:** complete for local laptop; no deploy
-- **Profile:** `dev` yaml still `llm.enabled: false`; turn on with `.env` `SUTRANETRA_LLM_ENABLED=1` + `GROQ_API_KEY`
+- **Profile:** `dev` yaml now has `llm.enabled: true`; `.env` supplies `SUTRANETRA_LLM_ENABLED=1` + `GROQ_API_KEY` for the live local demo
 - **Choice:** **Groq** (`llama-3.3-70b-versatile`), not Gemini. Already in SPEC §14/§16.2 and `get_chat_model`; Gemini would be a second unused provider.
 - **What shipped:** `.env` loader in `src/llm/client.py` (skip under pytest); `SUTRANETRA_LLM_ENABLED=1` override; `dev` provider groq; `/health` reports `llm`; README local uvicorn + streamlit
 - **Start:** `uvicorn src.api.app:app --host 127.0.0.1 --port 8000` and optional `streamlit run src/ui/app.py`
 - **Fallback:** missing key → template polish, investigator `degraded=True` (no UI banner on polish)
 - **Verify 2026-09-08:** `.env` Groq key is set (`gsk_…`, 56 chars). Live chat: `llama-3.3-70b-versatile` → `model_not_found`. This key’s catalog has no Llama 3.3. `openai/gpt-oss-20b` returned `groq-ok` (HTTP 200). Switched local/cloud pin to that model.
 
+### 2026-09-08 — judge UI, graph latency, and export preflight
+
+- **Status:** verified locally; corpus-size target intentionally not changed per request.
+- **What changed:** professionalized the FastAPI and Streamlit surfaces; removed fallback/debug copy from the UI; made the high-confidence cross-market pair the default; selected the smallest 3+ market cluster as the demo graph; added graph navigation controls and a deterministic large-graph layout; cached rendered cluster HTML; added `pair_scores(case_id, confidence)`, `evidence(value)`, and case-insensitive alias indexes; made search use exact identifier/handle paths; made exports cache-first with stable `clusters.csv`, `report.json`, and `report.pdf` download names.
+- **Groq:** `config.yaml` dev profile now enables Groq with `openai/gpt-oss-20b`; local `/health` returned `enabled=true`, `provider=groq`, `reachable=true`.
+- **Commands/evidence:** `py_compile` passed for changed Python modules; direct UI/config assertion passed; FastAPI and Streamlit were launched on `127.0.0.1:8000` and `:8501`; browser pass covered Search, Clusters, Pair inspector, Evidence Trail, OpSec, and Investigator on both surfaces.
+- **Measured paths:** PGP search **0.033s / 3 hits**; exact-handle search **0.025s / 3 hits**; recommended cluster **#13, 4 members, 3 markets, 1.39s**; large cluster **#1, 122 members, 2.78s**. Export routes returned HTTP 200: CSV **51,547 bytes**, JSON **866,024 bytes / 90 clusters**, PDF **270,548 bytes / 12 pages**, with correct content types and filenames.
+- **Issues:** full pytest collection on the iCloud-hosted `.venv` remained unresponsive after 60s and was stopped; the bundled runtime has no pytest. This is recorded as a verification environment issue, not a passing test claim. Cached exports were reused where present; PDF magic/header verification passed (`%PDF-1.4`).
+- **Follow-up:** direct `file://.../src/api/static/index.html` launch now targets the local API explicitly, keeps export links on the API origin, and renders a local-service connection card instead of a raw fetch exception when the API is down. Static JavaScript syntax and the file-launch assertions passed.
+
+### 2026-09-08 — graph rebuild, Investigator routing, and export refresh
+
+- **Status:** verified locally against the active `dev` profile.
+- **Graph root cause:** `CASE-2026-001` had stale derived `clusters` rows: persisted membership was **90 clusters / 375 members**, while the current case-scoped thresholded `pair_scores` graph was **55 components / 269 nodes / 347 edges**. The optimized cluster loader matched the old loader, but both were faithfully exposing stale membership. This caused changed node sets and empty cluster pages. `CASE-2026-002` had one thresholded component but no persisted graph rows because its graph stage had never run.
+- **Repair:** rebuilt only `clusters` for both current cases with `src.graph.build.run(..., --no-neo4j)` at each stored threshold. Posts and pair scores were not changed. Added explicit no-graph messaging for genuinely incomplete cases in both UI surfaces and stale-export detection based on the SQLite mtime.
+- **Graph verification:** exact membership parity now passes for `CASE-2026-001` (**55 components / 269 nodes / 347 edges**) and `CASE-2026-002` (**1 component / 2 nodes / 1 edge**). API checked all **56/56** cluster detail routes; every response had non-empty `vis.Network` HTML and member counts matching the cluster summary. Browser checked both rendered graph cases; the pre-repair pending state was also verified. Recommended demo graph is **cluster 9**, 4 aliases across 3 markets, 3 edges.
+- **Investigator repair:** added read-only SQLite `top_aliases` and routing for “most records / highest post count / most active alias”. Live Groq query used `top_aliases` (not Cypher) and returned `silkroad1:Limetless`, **7,848** stored posts. `cypher_query` remains optional for graph-topology questions only.
+- **Performance:** added `evidence(alias_id, kind, value, post_id)` index. Full report-data generation dropped from **40.69s to 6.25s** on this corpus. CSV **38,900 bytes / 1.43s**, JSON **635,972 bytes / 5.94s**, PDF **213,593 bytes / 2.02s** after regeneration.
+- **PDF:** the bundled runtime lacked matplotlib although the writer imported it; replaced that optional dependency with a Pillow renderer and pinned `Pillow>=10` in `requirements-ui.txt`. `/export/pdf` now returns a valid **11-page PDF**. `pdfinfo` and Quick Look thumbnail inspection passed; bundled `pdftoppm` could not render because its Fontconfig config is unavailable in this environment.
+- **Live health:** `/health` returned `profile=dev`, Groq `enabled=true`, `provider=groq`, `model=openai/gpt-oss-20b`, `reachable=true`. Browser smoke checks passed for graph, incomplete case, and Investigator query; no Cypher-unavailable text appeared.
+- **Tests/checks:** Python compilation, direct tool assertions, all-cluster API assertions, export magic/header checks, and browser checks passed. Full pytest collection remains unsuitable on the iCloud-hosted path and was not claimed as passing.
+
+### 2026-09-08 — graph legend and judge walkthrough copy
+
+- **Intent:** Make the graph and every judge-facing page self-explanatory without exposing implementation caveats or debug wording.
+- **What changed:** Added visible graph keys for marketplace node colours and same-/cross-market edge colours in the FastAPI static UI and Streamlit UI; added plain-language guides to Search, Clusters, Pair inspector, Evidence Trail, OpSec, and Investigator; renamed cluster selectors from `conf` to `max score`; added dense-component guidance for large graphs; improved pyvis hover text with marketplace, alias, link type, and stored pair confidence.
+- **Accuracy framing:** The UI now states that clusters are connected components of threshold-passing pair scores, the displayed cluster score is the strongest stored pair confidence in that component, and neither score nor cluster is an identity verdict.
+- **Verification:** `py_compile` passed for `src/graph/build.py`, `src/ui/app.py`, `src/api/app.py`, and `src/api/queries.py`; static JavaScript syntax passed; graph membership parity passed for both cases (`CASE-2026-001`: 55 components / 269 nodes / 347 edges; `CASE-2026-002`: 1 component / 2 nodes / 1 edge); `/health` reported Groq enabled/reachable with `openai/gpt-oss-20b`; Streamlit health returned `ok`.
+- **Browser smoke:** FastAPI and Streamlit both loaded all six views without fetch/internal errors. Cluster checks confirmed all marketplace/edge legend entries, threshold explanation, dense-graph explanation, inline pyvis graph, and professional-copy guard. Direct `file://` browser navigation remains blocked by the browser security policy; the supported demo URL is `http://127.0.0.1:8000/` (the static file contains the API-origin fallback for ordinary local browser launches).
