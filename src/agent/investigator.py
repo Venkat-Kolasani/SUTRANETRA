@@ -5,18 +5,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-from urllib.error import URLError
-from urllib.request import urlopen
 
 import yaml
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_ollama import ChatOllama
 
 from src.agent.tools import make_tools
 from src.graph.neo4j_sink import active_profile
+from src.llm.client import get_chat_model, llm_block, llm_reachable, ollama_reachable
 
-OLLAMA_TAGS = "http://127.0.0.1:11434/api/tags"
+# Re-export for older UI/tests.
+__all__ = ["ask", "ollama_reachable"]
+
 SYSTEM = """You are SUTRANETRA's investigator console.
 
 You retrieve already-computed forensic results. You never decide whether two aliases
@@ -47,37 +47,6 @@ and evidence_id / alias_id from the tool output. Never invent handles.
 If ct_pivot ran, sentence 1 must quote siblings[] and source exactly.
 Cap: at most two tool rounds unless the clearnet chain above requires both tools.
 """
-
-
-def ollama_reachable(timeout: float = 1.5) -> bool:
-    try:
-        with urlopen(OLLAMA_TAGS, timeout=timeout) as resp:
-            return 200 <= resp.status < 300
-    except (URLError, TimeoutError, OSError):
-        return False
-
-
-def ollama_models() -> list[str]:
-    try:
-        with urlopen(OLLAMA_TAGS, timeout=2) as resp:
-            data = json.loads(resp.read().decode())
-        return [m.get("name") or m.get("model") for m in data.get("models") or [] if m]
-    except (URLError, TimeoutError, OSError, json.JSONDecodeError):
-        return []
-
-
-def resolve_model(cfg: dict) -> str:
-    wanted = cfg.get("llm_model") or "qwen2.5:7b"
-    names = ollama_models()
-    if wanted in names or f"{wanted}:latest" in names:
-        return wanted
-    if any(n.startswith(wanted) for n in names):
-        return next(n for n in names if n.startswith(wanted))
-    # ponytail: 3B is weaker at tool choice; use only if the configured weights are absent.
-    for fallback in ("qwen2.5:7b", "qwen2.5:latest", "llama3.2:latest", "llama3.2"):
-        if fallback in names:
-            return fallback
-    return wanted
 
 
 def _load_cfg(config_path: str | Path = "config.yaml") -> dict:
@@ -119,28 +88,37 @@ def ask(
 ) -> dict[str, Any]:
     """Run one investigator turn. Returns prose + tool provenance. No DB writes."""
     cfg = cfg or _load_cfg(config_path)
-    if not ollama_reachable():
+    settings = llm_block(cfg)
+    if not llm_reachable(cfg):
         return {
             "ok": False,
             "degraded": True,
-            "text": "Ollama is unreachable. Use Search, Clusters, Pair inspector, and Evidence Trail.",
+            "text": "",
             "tool_traces": [],
             "model": None,
         }
-    model_name = resolve_model(cfg)
     profile_name, _block = active_profile(cfg)
     tools = make_tools(db_path, case_id, cfg)
-    llm = ChatOllama(model=model_name, temperature=0)
-    agent = create_agent(
-        llm,
-        tools,
-        system_prompt=SYSTEM + f"\nActive case_id={case_id}. Config profile={profile_name}.",
-        name="sutranetra-investigator",
-    )
-    result = agent.invoke(
-        {"messages": [HumanMessage(content=question)]},
-        {"recursion_limit": 6},
-    )
+    try:
+        llm = get_chat_model(cfg)
+        agent = create_agent(
+            llm,
+            tools,
+            system_prompt=SYSTEM + f"\nActive case_id={case_id}. Config profile={profile_name}.",
+            name="sutranetra-investigator",
+        )
+        result = agent.invoke(
+            {"messages": [HumanMessage(content=question)]},
+            {"recursion_limit": 6},
+        )
+    except Exception:
+        return {
+            "ok": False,
+            "degraded": True,
+            "text": "",
+            "tool_traces": [],
+            "model": settings["model"],
+        }
     messages = result.get("messages") or []
     traces = []
     pending: dict[str, dict] = {}
@@ -168,6 +146,6 @@ def ask(
         "degraded": False,
         "text": text,
         "tool_traces": traces,
-        "model": model_name,
+        "model": settings["model"],
         "case_id": case_id,
     }

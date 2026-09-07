@@ -1,7 +1,5 @@
 # SUTRANETRA — default profile is dev (no Neo4j, no LLM polish required).
-# Override: SUTRANETRA_PROFILE=demo or --profile demo on CLI (later prompts).
-
-# Default profile is dev (Neo4j sink off). Stage uses SUTRANETRA_PROFILE=demo.
+# Override: SUTRANETRA_PROFILE=demo|cloud. Cloud is the public judge path.
 # Community Edition 2026.07.1: CREATE USER works; GRANT ROLE reader does not
 # (UnsupportedAdministrationCommand). Reader access is a no-write code path,
 # not an enforced DB role. Password via NEO4J_PASSWORD, never committed.
@@ -39,7 +37,9 @@ stylometry:
   embed_max_posts: 200
   embed_batch_size: 64
 
-llm_model: qwen2.5:7b
+# Shared model name. Profiles override provider + model.
+# cloud uses Groq; local demo may still use Ollama.
+llm_model: llama-3.3-70b-versatile
 
 profiles:
   dev:
@@ -51,6 +51,8 @@ profiles:
       database: neo4j
     llm:
       enabled: false
+      provider: ollama
+      model: qwen2.5:7b
 
   demo:
     neo4j:
@@ -63,3 +65,18 @@ profiles:
       reader_password: ""
     llm:
       enabled: true
+      provider: ollama
+      model: qwen2.5:7b
+
+  cloud:
+    neo4j:
+      enabled: false
+      uri: bolt://localhost:7687
+      user: neo4j
+      password: ""
+      database: neo4j
+    llm:
+      enabled: true
+      provider: groq
+      model: llama-3.3-70b-versatile
+    api_base_url: ""  # set SUTRANETRA_API_URL in Streamlit secrets

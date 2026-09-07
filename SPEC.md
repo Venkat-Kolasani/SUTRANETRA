@@ -739,9 +739,9 @@ This is the start of the **Evidence / Investigation** layer (§1): not a new sco
 
 > `Alias_A` (SilkRoad1, 214 posts) and `Alias_C` (Agora, 88 posts) — **confidence 0.91**. Shared PGP fingerprint `A1B2…9F0` in 3 posts. Shared BTC address `1FTYtw…4PSK`. Stylometric similarity 0.74 (char n-gram). Posting-hour overlap 0.81, both consistent with UTC+1.
 
-Optional LLM polish via Ollama, using **the same `llm_model` from `config.yaml` as §16.2** — never a second model — takes the structured evidence dict and rewrites it as an investigator's paragraph. **The LLM never sees raw posts and never decides anything.** It rewrites facts the pipeline already computed. Say that explicitly when a judge asks whether the AI is hallucinating attributions.
+Optional LLM polish via `src/llm/client.py` `get_chat_model()`, using **the same profile `llm.model` as §16.2** — never a second model. Local `demo` may use Ollama; `cloud` uses Groq (`llama-3.3-70b-versatile` on the free tier). The function takes the structured evidence dict and rewrites it as an investigator's paragraph. **The LLM never sees raw posts and never decides anything.** It rewrites facts the pipeline already computed. Say that explicitly when a judge asks whether the AI is hallucinating attributions.
 
-If Ollama isn't running, fall back to the template silently. Do not let a model download failure break the demo.
+If the LLM is unreachable (Ollama down, missing `GROQ_API_KEY`, quota), fall back to the template silently. Do not let a provider failure break the demo.
 
 **Evidence Trail (`trail.py`).** Separately from prose, build the ordered step list defined in §15. The template sentence is what you *read*; the trail is what you *show*. Both must agree with the same underlying rows. The trail never invents steps; OpSec/CT nodes appear only when the active case has matching findings.
 
@@ -780,8 +780,9 @@ Sibling domain Q
 ```
 
 Each step is a typed node (`alias` | `post` | `evidence` | `score` | `opsec` | `ct_cert` | `ct_domain`) with the underlying row ids so the same trail can be exported and queried by the agent. Missing branches (no OpSec hit for this cluster) are omitted rather than fabricated — never invent a trail step.
-6. **OpSec scan tab** — run the scanner against a target, show findings + the CT pivot results as a small graph; findings write to `opsec_findings` under the active case.
+6. **OpSec scan tab** — locally: run the scanner against a localhost demo target, show findings + the CT pivot results; findings write to `opsec_findings` under the active case. In `cloud` profile: **stored findings only** (no live scan against a judge's machine).
 7. **Export buttons** on every view.
+8. **Cloud UI** — Streamlit Community Cloud talks only to the public FastAPI (`SUTRANETRA_API_URL`). Local `dev`/`demo` may still open SQLite directly.
 
 **`explain/trail.py`:**
 ```python
@@ -811,6 +812,7 @@ langgraph==1.2.11
 langchain==1.4.0
 langchain-core==1.6.2
 langchain-ollama==1.1.0
+langchain-groq==1.1.3
 langgraph-checkpoint-sqlite==3.1.1
 ```
 LangChain 1.x renamed things versus the 0.x tutorials all over the internet. Before writing agent code, run `python -c "import langchain.agents as a; print(dir(a))"` and build against **the installed API**, not against a blog post. This is the single biggest time sink in this section.
@@ -879,7 +881,7 @@ This is where an agent earns its place. Not in the scoring path — in the **que
 ```python
 # src/agent/investigator.py
 from langchain_core.tools import tool
-from langchain_ollama import ChatOllama
+from src.llm.client import get_chat_model
 
 @tool
 def search_evidence(kind: str, value: str) -> list[dict]:
@@ -916,9 +918,9 @@ def opsec_scan(target_url: str) -> list[dict]:
     """Run the misconfiguration scanner against a target. Localhost/demo targets only."""
 ```
 
-Model: `ChatOllama(model=cfg.llm_model, temperature=0)` — local, free, offline, no API key. Tool-calling works on 8B; if RAM is tight use `qwen2.5:7b`, stronger at tool selection than any 3B.
+Model: `get_chat_model(cfg)` at `temperature=0`. `cloud` uses Groq `llama-3.3-70b-versatile` (`GROQ_API_KEY`). Local `demo` may use `ChatOllama` with `qwen2.5:7b`.
 
-**One model serves both this and §14.** The model name lives in `config.yaml` as `llm_model` and §14 reads the same key. Two different models resident at once is an out-of-memory failure on an 8 GB laptop, and it will happen on demo day if the setting is duplicated.
+**One model setting serves both this and §14.** Provider + model live under `profiles.<name>.llm`. Two different local models resident at once is an out-of-memory failure on an 8 GB laptop.
 
 Demo queries that land:
 - *"Which aliases used the same PGP key as Nightcrawler on Agora?"*
@@ -931,7 +933,7 @@ Demo queries that land:
 1. **The agent never computes a verdict.** Every tool is read-only over `pair_scores` and `evidence`. It retrieves and phrases; the deterministic pipeline decides. `opsec_scan` is the only tool with side effects and it is whitelisted to localhost / explicitly-supplied demo targets.
 2. **No tool writes to the DB.** Enforce with a read-only SQLite connection (`file:attrib.sqlite?mode=ro`) in the agent process. Not a convention — a connection flag.
 3. **Every answer carries provenance.** Tools return row ids; the UI renders the underlying evidence rows beneath the agent's text. Judge can always see the source.
-4. **Agent offline → console degrades to structured search.** The Streamlit filters in §15 stay fully functional with Ollama dead. Test that path.
+4. **Agent offline → console degrades to structured search.** The Streamlit filters in §15 stay fully functional with Ollama/Groq dead. Test that path. No login wall.
 
 This is the answer to "is your AI hallucinating attributions?":
 
@@ -1051,6 +1053,9 @@ langgraph==1.2.11
 langchain==1.3.17
 langchain-core==1.6.0
 langchain-ollama==1.1.0
+langchain-groq==1.1.3
+fastapi>=0.115
+uvicorn>=0.32
 langgraph-checkpoint-sqlite==3.1.1
 
 # graph projection (§13.1) — optional at runtime
@@ -1060,19 +1065,30 @@ langchain-neo4j==0.10.0
 
 Install the optional layers **in a separate step, after the core pipeline works**. They pull large dependency trees and a resolver conflict must never be able to break ingestion.
 
-**Neo4j Community Edition** is a separate download (zip or Desktop, JVM bundled, free, no licence, no Docker). Server needs ~2 GB RAM while running — budget it alongside the Ollama model, and don't run a graph load and an LLM query at the same moment on an 8 GB laptop.
+**Neo4j Community Edition** is a separate download for the local `demo` profile only. Cloud profile does not run Neo4j.
 
-No GPU. No paid API. No account signup anywhere in the stack. Total cost: ₹0.
+Local laptop disk: ~4 GB archives + ~2 GB SQLite + embeddings. Cloud serves a **trimmed read-only snapshot** (`data/demo/`), not the full corpus DB. Groq free-tier LLM; no paid Neo4j Aura.
 
-Disk: ~4 GB archives + ~2 GB SQLite + ~400 MB sentence-transformers + ~4.7 GB Ollama model. **Keep 15 GB free.**
+---
+
+## 20.1 Cloud deploy (free tier, judge-facing)
+
+Remote judges open two public URLs:
+
+1. **Backend** — Render free web service: `uvicorn src.api.app:app --host 0.0.0.0 --port $PORT` with `SUTRANETRA_PROFILE=cloud`, read-only SQLite, `GROQ_API_KEY`.
+2. **Frontend** — Streamlit Community Cloud: `streamlit run src/ui/app.py` with secret `SUTRANETRA_API_URL` pointing at the Render origin.
+
+The API is a wrapper: health, case reads, search, clusters, pairs, trail, stored OpSec, agent chat, explanation polish. Scoring stays in the CLI pipeline. CORS is locked to the Streamlit origin(s) via `SUTRANETRA_CORS_ORIGINS`.
+
+Env (never commit values): `GROQ_API_KEY`, `SUTRANETRA_PROFILE`, `SUTRANETRA_API_URL`, `SUTRANETRA_SQLITE` (optional override of `paths.sqlite_db`), `SUTRANETRA_CORS_ORIGINS`.
 
 ---
 
 ## 21. Do NOT build
 
-Auth/login, multi-tenancy, CI/CD, Docker, monitoring, alerting, autoscaling, REST API, real-time streaming ingestion, custom frontend framework, a message queue.
+Auth/login, multi-tenancy, Docker, monitoring, alerting, autoscaling, real-time streaming ingestion, custom frontend framework, a message queue.
 
-None of it is judged. None of it demonstrates whether the attribution mechanism works. Every hour spent there is an hour not spent on capability #1.
+A thin read-only REST API and dual free hosting **are required** so judges can open the product from other locations. Do not grow that into a SPA, auth wall, or paid infrastructure.
 
 ---
 
@@ -1084,7 +1100,7 @@ None of it is judged. None of it demonstrates whether the attribution mechanism 
 | Too few cross-market same-username pairs | Add TheHub (cross-market meta-forum, highest overlap by construction). If still thin, add same-market temporal splits as a secondary label source |
 | Embedding pass too slow on the full corpus | Cap at 200 posts per alias (sampled), and run char n-grams on everything — char n-grams are cheap and carry the style signal anyway |
 | certspotter rate-limits or crt.sh is down mid-demo | Cache-first by default. Live query behind `--live`. Verified failure mode: crt.sh returned 502 three times during research |
-| Ollama model won't load on the demo machine | Template explanations are the default path; LLM is polish. Test the fallback. Pull the model days early — never download on demo day |
+| Ollama model won't load / Groq quota | Template explanations are the default path; LLM is polish. Test the silent fallback. |
 | LangChain 1.x API differs from every 0.x tutorial online | Pin the five versions in §20, and build against `dir()` of the installed package, not a blog post. Budget half a day for this alone |
 | Agent picks the wrong tool or loops | `temperature=0`, ≤6 tools, tool docstrings written as instructions. Cap iterations. Rehearsed queries are the demo path; free-form is the bonus |
 | Agentic dependency tree breaks the core install | Install core first, optional layers second, in a separate step. Core pipeline must import and run with LangChain and the neo4j driver uninstalled |

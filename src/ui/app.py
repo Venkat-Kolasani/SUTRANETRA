@@ -36,6 +36,7 @@ from src.opsec.scanner import (
     validate_scan_target,
 )
 from src.pipeline.case import get_case
+from src.ui import remote
 
 # Exports skip aliases that dropped below the case threshold after cluster persist.
 
@@ -194,14 +195,40 @@ def render_trail_html(trail: list[dict]) -> str:
     return "<div class='sutra-trail'>" + "".join(blocks) + "</div>"
 
 
-def export_buttons(case_id: str, db_path: str, prefix: str) -> None:
+def export_buttons(case_id: str, db_path: str, prefix: str, *, cfg: dict | None = None) -> None:
+    st.caption("Case exports")
+    c1, c2, c3 = st.columns(3)
+    if remote.is_remote(cfg):
+        with c1:
+            if st.button("Fetch clusters.csv", key=f"{prefix}_csv"):
+                st.session_state[f"{prefix}_csv_bytes"] = remote.get_bytes(
+                    f"/cases/{case_id}/export/csv", cfg
+                )
+            raw = st.session_state.get(f"{prefix}_csv_bytes")
+            if raw:
+                st.download_button("Download CSV", raw, file_name="clusters.csv", mime="text/csv", key=f"{prefix}_csv_dl")
+        with c2:
+            if st.button("Fetch report.json", key=f"{prefix}_json"):
+                st.session_state[f"{prefix}_json_bytes"] = remote.get_bytes(
+                    f"/cases/{case_id}/export/json", cfg
+                )
+            raw = st.session_state.get(f"{prefix}_json_bytes")
+            if raw:
+                st.download_button("Download JSON", raw, file_name="report.json", mime="application/json", key=f"{prefix}_json_dl")
+        with c3:
+            if st.button("Fetch report.pdf", key=f"{prefix}_pdf"):
+                st.session_state[f"{prefix}_pdf_bytes"] = remote.get_bytes(
+                    f"/cases/{case_id}/export/pdf", cfg
+                )
+            raw = st.session_state.get(f"{prefix}_pdf_bytes")
+            if raw:
+                st.download_button("Download PDF", raw, file_name="report.pdf", mime="application/pdf", key=f"{prefix}_pdf_dl")
+        return
     out_dir = Path("data/exports") / case_id
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / f"{prefix}_clusters.csv"
     json_path = out_dir / f"{prefix}_report.json"
     pdf_path = out_dir / f"{prefix}_report.pdf"
-    st.caption("Case exports")
-    c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("Write clusters.csv", key=f"{prefix}_csv"):
             write_clusters_csv(db_path, case_id, csv_path)
@@ -242,8 +269,15 @@ def export_buttons(case_id: str, db_path: str, prefix: str) -> None:
             )
 
 
+def _snapshot(case: dict) -> dict:
+    snap = case.get("corpus_snapshot")
+    if isinstance(snap, str):
+        return json.loads(snap)
+    return snap or {}
+
+
 def render_case_header(case: dict) -> None:
-    snap = json.loads(case["corpus_snapshot"])
+    snap = _snapshot(case)
     st.markdown(
         f"""
 <div class="sutra-hero">
@@ -288,7 +322,7 @@ def render_case_header(case: dict) -> None:
     )
 
 
-def tab_search(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
+def tab_search(conn: sqlite3.Connection | None, case_id: str, db_path: str, cfg: dict) -> None:
     st.subheader("Evidence search")
     st.caption("Full-text over extracted evidence and posts, with archive-member lineage.")
     if st.button("Load example PGP fingerprint", key="demo_pgp"):
@@ -300,12 +334,16 @@ def tab_search(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
     )
     if not (query or "").strip():
         st.info("Search a handle, wallet, PGP fingerprint, onion, or clearnet domain.")
-        export_buttons(case_id, db_path, "search")
+        export_buttons(case_id, db_path, "search", cfg=cfg)
         return
-    hits = search_corpus(conn, query)
+    hits = (
+        remote.get(f"/cases/{case_id}/search", cfg, q=query)
+        if remote.is_remote(cfg)
+        else search_corpus(conn, query)
+    )
     if not hits:
         st.warning("No matches.")
-        export_buttons(case_id, db_path, "search")
+        export_buttons(case_id, db_path, "search", cfg=cfg)
         return
     st.caption(f"{len(hits)} hits")
     df = pd.DataFrame(hits)
@@ -326,12 +364,16 @@ def tab_search(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
         if c in df.columns
     ]
     st.dataframe(df[cols], width="stretch", hide_index=True)
-    export_buttons(case_id, db_path, "search")
+    export_buttons(case_id, db_path, "search", cfg=cfg)
 
 
-def tab_clusters(conn: sqlite3.Connection, case_id: str, case: dict, db_path: str) -> None:
+def tab_clusters(conn: sqlite3.Connection | None, case_id: str, case: dict, db_path: str, cfg: dict) -> None:
     st.subheader("Actor clusters")
-    clusters = list_case_clusters(conn, case_id)
+    clusters = (
+        remote.get(f"/cases/{case_id}/clusters", cfg)
+        if remote.is_remote(cfg)
+        else list_case_clusters(conn, case_id)
+    )
     if not clusters:
         st.warning("No clusters for this case.")
         return
@@ -356,14 +398,18 @@ def tab_clusters(conn: sqlite3.Connection, case_id: str, case: dict, db_path: st
     idx = _select_index("Select cluster", labels, key="cluster_pick", default=default)
     cluster = clusters[idx]
     st.session_state["selected_cluster_id"] = cluster["cluster_id"]
-    members = cluster_member_rows(conn, case_id, cluster["cluster_id"])
-    alias_ids = [m["alias_id"] for m in members]
-    shared = shared_evidence_with_lineage(conn, alias_ids)
-    with st.spinner("Rendering cluster graph…"):
-        sub = cluster_subgraph(conn, case_id, cluster["cluster_id"], float(case["threshold"]))
-        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as tmp:
-            render_pyvis(sub, Path(tmp.name), height="480px")
-            html = Path(tmp.name).read_text(encoding="utf-8")
+    if remote.is_remote(cfg):
+        payload = remote.get(f"/cases/{case_id}/clusters/{cluster['cluster_id']}", cfg)
+        members, shared, html = payload["members"], payload["shared"], payload.get("graph_html") or ""
+    else:
+        members = cluster_member_rows(conn, case_id, cluster["cluster_id"])
+        alias_ids = [m["alias_id"] for m in members]
+        shared = shared_evidence_with_lineage(conn, alias_ids)
+        with st.spinner("Rendering cluster graph…"):
+            sub = cluster_subgraph(conn, case_id, cluster["cluster_id"], float(case["threshold"]))
+            with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as tmp:
+                render_pyvis(sub, Path(tmp.name), height="480px")
+                html = Path(tmp.name).read_text(encoding="utf-8")
     legend = " · ".join(
         f"<span style='color:{col}'>■</span> {m}" for m, col in MARKET_COLOR.items()
     )
@@ -376,12 +422,16 @@ def tab_clusters(conn: sqlite3.Connection, case_id: str, case: dict, db_path: st
     with c2:
         st.markdown("**Shared evidence (with lineage)**")
         st.dataframe(pd.DataFrame(shared), width="stretch", hide_index=True)
-    export_buttons(case_id, db_path, "clusters")
+    export_buttons(case_id, db_path, "clusters", cfg=cfg)
 
 
-def tab_pair(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
+def tab_pair(conn: sqlite3.Connection | None, case_id: str, db_path: str, cfg: dict) -> None:
     st.subheader("Pair inspector")
-    options = alias_options(conn, case_id)
+    options = (
+        [(o["label"], o["alias_id"]) for o in remote.get(f"/cases/{case_id}/aliases", cfg)]
+        if remote.is_remote(cfg)
+        else alias_options(conn, case_id)
+    )
     if len(options) < 2:
         st.warning("Need at least two clustered aliases.")
         return
@@ -406,15 +456,32 @@ def tab_pair(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
     if a_id == b_id:
         st.warning("Pick two different aliases.")
         return
-    ev = explain_pair(conn, case_id, a_id, b_id)
-    score = conn.execute(
-        """
-        SELECT * FROM pair_scores
-        WHERE case_id = ?
-          AND ((a_alias_id = ? AND b_alias_id = ?) OR (a_alias_id = ? AND b_alias_id = ?))
-        """,
-        (case_id, a_id, b_id, b_id, a_id),
-    ).fetchone()
+    if remote.is_remote(cfg):
+        payload = remote.get(
+            f"/cases/{case_id}/pairs",
+            cfg,
+            a_alias_id=a_id,
+            b_alias_id=b_id,
+            polish=True,
+        )
+        ev = payload["explanation"]
+        score = payload.get("scores")
+        detail = payload.get("detail") or []
+        sentence = payload.get("sentence") or ev.get("template_sentence")
+    else:
+        from src.llm.polish import polish_explanation
+
+        ev = explain_pair(conn, case_id, a_id, b_id)
+        sentence = polish_explanation(ev, cfg)
+        score = conn.execute(
+            """
+            SELECT * FROM pair_scores
+            WHERE case_id = ?
+              AND ((a_alias_id = ? AND b_alias_id = ?) OR (a_alias_id = ? AND b_alias_id = ?))
+            """,
+            (case_id, a_id, b_id, b_id, a_id),
+        ).fetchone()
+        detail = pair_shared_detail(conn, a_id, b_id)
     if score is None:
         st.warning(
             "No `pair_scores` row for this pair — it was never a fusion candidate, "
@@ -431,11 +498,11 @@ def tab_pair(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
             val = score[key]
             col.metric(label, "—" if val is None else f"{float(val):.3f}")
     st.markdown("**Generated explanation**")
-    st.markdown(f"<div class='quote'>{ev['template_sentence']}</div>", unsafe_allow_html=True)
-    detail = pair_shared_detail(conn, a_id, b_id)
+    st.markdown(f"<div class='quote'>{sentence}</div>", unsafe_allow_html=True)
     st.markdown("**Shared evidence with post context and lineage**")
     if not detail:
         st.info("No shared hard-evidence rows for this pair.")
+        export_buttons(case_id, db_path, "pair", cfg=cfg)
         return
     for item in detail:
         st.markdown(f"**{item['kind']}** · `{item['value'][:64]}`")
@@ -454,15 +521,19 @@ def tab_pair(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
                     language=None,
                 )
                 st.write((post.get("body") or "")[:280])
-    export_buttons(case_id, db_path, "pair")
+    export_buttons(case_id, db_path, "pair", cfg=cfg)
 
 
-def tab_trail(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
+def tab_trail(conn: sqlite3.Connection | None, case_id: str, db_path: str, cfg: dict) -> None:
     st.subheader("Evidence Trail")
     st.caption("Deterministic forensic chain from explain/trail.py — missing OpSec/CT steps are omitted, never faked.")
     mode = st.radio("Trail source", ["Cluster", "Pair"], horizontal=True)
     if mode == "Cluster":
-        clusters = list_case_clusters(conn, case_id)
+        clusters = (
+            remote.get(f"/cases/{case_id}/clusters", cfg)
+            if remote.is_remote(cfg)
+            else list_case_clusters(conn, case_id)
+        )
         if not clusters:
             st.warning("No clusters for this case.")
             return
@@ -475,9 +546,17 @@ def tab_trail(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
             default = next((i for i, c in enumerate(clusters) if c["n_markets"] >= 3), 0)
         idx = _select_index("Cluster", labels, key="trail_cluster", default=default)
         with st.spinner("Building evidence trail…"):
-            trail = build_evidence_trail(conn, case_id, cluster_id=clusters[idx]["cluster_id"])
+            trail = (
+                remote.get(f"/cases/{case_id}/trail", cfg, cluster_id=clusters[idx]["cluster_id"])
+                if remote.is_remote(cfg)
+                else build_evidence_trail(conn, case_id, cluster_id=clusters[idx]["cluster_id"])
+            )
     else:
-        options = alias_options(conn, case_id)
+        options = (
+            [(o["label"], o["alias_id"]) for o in remote.get(f"/cases/{case_id}/aliases", cfg)]
+            if remote.is_remote(cfg)
+            else alias_options(conn, case_id)
+        )
         if len(options) < 2:
             st.warning("Need at least two aliases.")
             return
@@ -499,15 +578,37 @@ def tab_trail(conn: sqlite3.Connection, case_id: str, db_path: str) -> None:
                 default=_label_index(labels, DEMO_LABELS[1], min(1, len(labels) - 1)),
             )
         with st.spinner("Building evidence trail…"):
-            trail = build_evidence_trail(conn, case_id, a_alias_id=ids[a_idx], b_alias_id=ids[b_idx])
+            trail = (
+                remote.get(
+                    f"/cases/{case_id}/trail",
+                    cfg,
+                    a_alias_id=ids[a_idx],
+                    b_alias_id=ids[b_idx],
+                )
+                if remote.is_remote(cfg)
+                else build_evidence_trail(conn, case_id, a_alias_id=ids[a_idx], b_alias_id=ids[b_idx])
+            )
     st.markdown(render_trail_html(trail), unsafe_allow_html=True)
     st.caption("Step sequence (types)")
     st.code(" → ".join(s["type"] for s in trail), language=None)
-    export_buttons(case_id, db_path, "trail")
+    export_buttons(case_id, db_path, "trail", cfg=cfg)
 
 
-def tab_opsec(conn: sqlite3.Connection, case_id: str, cfg: dict, db_path: str) -> None:
+def tab_opsec(conn: sqlite3.Connection | None, case_id: str, cfg: dict, db_path: str) -> None:
     st.subheader("OpSec scan")
+    cloud = remote.is_remote(cfg)
+    if cloud:
+        st.caption("Cloud: stored findings from the localhost demo scan. Live scan is local-only.")
+        findings = remote.get(f"/cases/{case_id}/opsec", cfg)
+        st.markdown(f"**Findings for {case_id}** ({len(findings)} rows)")
+        if findings:
+            st.dataframe(pd.DataFrame(findings), width="stretch", hide_index=True)
+        siblings = [f for f in findings if f["finding_kind"] == "ct_sibling"]
+        if siblings:
+            st.markdown("**CT sibling domains**")
+            st.write([f["value"] for f in siblings[:12]])
+        export_buttons(case_id, db_path, "opsec", cfg=cfg)
+        return
     st.caption("Localhost demo target only — not a general-purpose scanner.")
     http_url = st.text_input("HTTP target (localhost only)", value=DEFAULT_HTTP)
     tls_url = st.text_input("TLS target (optional, localhost only)", value=DEFAULT_TLS)
@@ -556,22 +657,20 @@ def tab_opsec(conn: sqlite3.Connection, case_id: str, cfg: dict, db_path: str) -
     if siblings:
         st.markdown("**CT sibling domains**")
         st.write([f["value"] for f in siblings[:12]])
-    export_buttons(case_id, db_path, "opsec")
+    export_buttons(case_id, db_path, "opsec", cfg=cfg)
 
 
 def tab_investigator(case_id: str, cfg: dict, db_path: str) -> None:
-    from src.agent.investigator import ask, ollama_reachable
+    from src.agent.investigator import ask
+    from src.llm.client import llm_reachable
 
     st.subheader("Investigator")
     st.caption(
         "Natural-language query over stored results. The model does not score aliases "
         "and does not issue identity verdicts. Provenance rows render under every answer."
     )
-    if not ollama_reachable():
-        st.warning(
-            "Ollama is unreachable. This tab is offline — use Search, Clusters, "
-            "Pair inspector, and Evidence Trail (structured UI)."
-        )
+    live = True if remote.is_remote(cfg) else llm_reachable(cfg)
+    if not live and not remote.is_remote(cfg):
         return
     if "inv_chat" not in st.session_state:
         st.session_state["inv_chat"] = []
@@ -599,7 +698,10 @@ def tab_investigator(case_id: str, cfg: dict, db_path: str) -> None:
     if not q:
         return
     with st.spinner("Querying stored results…"):
-        ans = ask(q, db_path=db_path, case_id=case_id, cfg=cfg)
+        if remote.is_remote(cfg):
+            ans = remote.post("/agent/chat", {"case_id": case_id, "question": q}, cfg)
+        else:
+            ans = ask(q, db_path=db_path, case_id=case_id, cfg=cfg)
     st.session_state["inv_chat"].append({"q": q, "a": ans})
     st.rerun()
 
@@ -614,12 +716,18 @@ def main() -> None:
     st.markdown(brand_css(), unsafe_allow_html=True)
     cfg = load_config()
     db_path = cfg["paths"]["sqlite_db"]
-    conn = open_db(db_path)
+    if Path("data/demo/attrib.sqlite").exists() and not Path(db_path).exists():
+        db_path = "data/demo/attrib.sqlite"
+    cloud = remote.is_remote(cfg)
+    conn = None if cloud else open_db(db_path)
     try:
         with st.sidebar:
             st.markdown("### SUTRANETRA")
             st.caption(TAGLINE)
-            cases = list_cases(conn)
+            if cloud:
+                cases = remote.get("/cases", cfg)
+            else:
+                cases = list_cases(conn)
             if not cases:
                 st.error("No cases in database.")
                 return
@@ -628,33 +736,29 @@ def main() -> None:
             case_id = st.selectbox("Active case", case_ids, index=default_idx)
             if case_id is None:
                 case_id = case_ids[default_idx]
-            case = get_case(db_path, case_id) or next(c for c in cases if c["case_id"] == case_id)
-            st.markdown("---")
-            st.markdown("**Degraded mode**")
-            from src.agent.investigator import ollama_reachable as _ollama_up
-
-            ollama_on = _ollama_up()
-            st.caption(
-                f"Neo4j: off in this UI · Ollama: {'on' if ollama_on else 'off'} · "
-                "templates + structured views always work."
-            )
+            if cloud:
+                case = remote.get(f"/cases/{case_id}", cfg)
+            else:
+                case = get_case(db_path, case_id) or next(c for c in cases if c["case_id"] == case_id)
+            st.caption("templates + structured views always work")
 
         render_case_header(case)
         view = st.segmented_control("View", VIEWS, default=VIEWS[0], required=True, key="sutra_view") or VIEWS[0]
         if view == "Search":
-            tab_search(conn, case_id, db_path)
+            tab_search(conn, case_id, db_path, cfg)
         elif view == "Clusters":
-            tab_clusters(conn, case_id, case, db_path)
+            tab_clusters(conn, case_id, case, db_path, cfg)
         elif view == "Pair inspector":
-            tab_pair(conn, case_id, db_path)
+            tab_pair(conn, case_id, db_path, cfg)
         elif view == "Evidence Trail":
-            tab_trail(conn, case_id, db_path)
+            tab_trail(conn, case_id, db_path, cfg)
         elif view == "OpSec":
             tab_opsec(conn, case_id, cfg, db_path)
         else:
             tab_investigator(case_id, cfg, db_path)
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 if __name__ == "__main__":

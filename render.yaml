@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: sutranetra-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt -r requirements-agent.txt -r requirements-api.txt
+    startCommand: uvicorn src.api.app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SUTRANETRA_PROFILE
+        value: cloud
+      - key: SUTRANETRA_SQLITE
+        value: data/demo/attrib.sqlite
+      - key: SUTRANETRA_CORS_ORIGINS
+        value: "*"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: GROQ_API_KEY
+        sync: false

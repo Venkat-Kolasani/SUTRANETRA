@@ -404,4 +404,14 @@ Copy this block for each prompt:
 - **Issues / near-misses:** 7B tool-calling will over-claim cluster mates as PGP sharers if `get_cluster` is in the same turn — routing prompt + compact `search_evidence` dict (aliases[] + 8 lineage samples) + a deterministic provenance footer are what make the rehearsed answers honest. `erowid.org` is a widely mentioned public site (65 aliases in the truncated sample), not a single-vendor leak. CE RBAC is still **not** enforced; a passing regex test is not a read-only role. `osascript quit app Ollama` can fail with user-cancelled; `killall` worked for the degrade check.
 - **Judge/interview notes:** The LLM never scores. Provenance expanders under the chat are the checkable artifact. Demo script is the three rehearsed questions, not free-form. No OpenAI/Anthropic key is required.
 
+## 2026-09-07 — Cloud free dual-deploy (Groq + FastAPI + Streamlit)
+
+- **Intent:** Public backend + frontend for remote judges. Pipeline stays CLI; cloud is read-only.
+- **What changed:** `profiles.cloud` in `config.yaml`; `src/llm/` Groq/Ollama client + polish; `src/api/` FastAPI wrapper; Streamlit uses HTTP when `SUTRANETRA_API_URL` is set; OpSec live scan off in cloud; `render.yaml`, `.env.example`, `scripts/pack_demo_db.py`. AGENTS/CLAUDE/SPEC/README/ethics: thin REST + free hosting in scope; still no auth/SPA.
+- **LLM:** Groq `llama-3.3-70b-versatile` shared by investigator + polish. Missing key → silent template / agent `degraded=True` with empty text.
+- **Profile:** cloud. Neo4j off.
+- **DoD:** in-repo tests. Public URLs need `GROQ_API_KEY` plus packed `data/demo/attrib.sqlite` (do not upload the ~4.4 GB full DB).
+- **Tests:** `tests/test_cloud_api.py`; framework-leak allows `src/llm/`, forbids langchain in `src/api/`.
+
+
 

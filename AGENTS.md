@@ -27,8 +27,8 @@ These decisions were made deliberately in `SPEC.md` §0 after an earlier draft g
 1. **The deterministic pipeline is the core; frameworks are wrappers.** Every pipeline stage (`ingest`, `evidence`, `stylometry`, `fusion`, `graph`, `opsec`, `explain`) is a plain, standalone-callable Python function/module before it is ever wired into LangGraph. LangGraph nodes call these functions; they never contain scoring, extraction, or business logic themselves. If you could delete `src/pipeline/graph.py` and the system still produces correct output via the CLI, the invariant holds. If you can't, it's broken — fix it before adding anything else.
 2. **The investigator agent is read-only, always.** No LangChain tool writes to SQLite or Neo4j. This is enforced by connection mode (`file:...?mode=ro`, a read-only Neo4j role/user), not by convention or prompt wording. The agent retrieves and phrases; it never computes a verdict, never decides a match, never touches `pair_scores` except to read it.
 3. **Confidence is learned, never hand-tuned in the shipped path.** `fusion/model.py` fits a `LogisticRegression` on labeled pairs. The `--heuristic` fixed-weight mode exists only as a fallback if the labeled set turns out too small — it is not the default, and if you use it, say so explicitly in every place confidence is reported.
-4. **Neo4j and Ollama are optional at runtime; SQLite + networkx + templates are not.** Every export, every cluster view, every explanation must work with `--no-neo4j` and with Ollama unreachable. Test both degraded paths before considering a step done, not after.
-5. **Two config profiles exist: `dev` and `demo`.** `dev` has the Neo4j sink and LLM polish off — you should not need a running server to iterate. `demo` has both on. Never hand-wave which profile a test or a demo run used.
+4. **Neo4j and the LLM are optional at runtime; SQLite + networkx + templates are not.** Every export, every cluster view, every explanation must work with Neo4j off and with the LLM unreachable (Ollama locally, Groq in cloud). Test both degraded paths before considering a step done, not after.
+5. **Three config profiles exist: `dev`, `demo`, and `cloud`.** `dev` has Neo4j and LLM polish off. `demo` is the local laptop path (optional Neo4j + optional Ollama). `cloud` is the judge-facing path: public FastAPI + public Streamlit, Groq for phrasing, Neo4j off, precomputed read-only SQLite. Never hand-wave which profile a test or a demo run used.
 6. **Evaluation is blind.** At scoring time, the alias/username string is stripped from both sides of a pair before it reaches the stylometry vectorizers — not just from the reported label. If a feature computation ever has access to the alias string it's currently scoring, that's a data leak, and the PR-AUC number that results from it is not a claim you can defend on stage.
 7. **Report the honest number even when it's worse.** Blocking recall gets reported both with forced-inclusion of evidence/eval pairs (the number that will appear in the demo) and without it (the number that answers "would this work in production"). Never report only the flattering one.
 
@@ -39,9 +39,9 @@ sutranetra/                 # product / shipped project name: SUTRANETRA
 ├── SPEC.md               # the full technical spec — the source of truth for every field, selector, formula, and schema
 ├── AGENTS.md             # this file (agent operating contract)
 ├── CLAUDE.md             # same contract for Claude Code; keep in sync with AGENTS.md
-├── config.yaml           # dev/demo profiles, thresholds, market list
-├── data/                 # gitignored — raw archives, sqlite db, CT cache
-├── src/                  # ingest/ evidence/ stylometry/ temporal/ fusion/ graph/ opsec/ explain/ pipeline/ agent/ export/ ui/
+├── config.yaml           # dev/demo/cloud profiles, thresholds, market list
+├── data/                 # gitignored raw archives + full sqlite; data/demo/ is the cloud snapshot
+├── src/                  # ingest/ evidence/ stylometry/ temporal/ fusion/ graph/ opsec/ explain/ pipeline/ agent/ llm/ api/ export/ ui/
 ├── tests/
 ├── prompts/              # NN-name.md build prompts, numbered in order
 └── docs/
@@ -109,7 +109,7 @@ Before writing any LangChain/LangGraph agent code, inspect the actually-installe
 
 ## 9. What NOT to build
 
-Auth, multi-tenancy, CI/CD, Docker, monitoring/alerting, autoscaling, a REST API, real-time streaming ingestion, a custom frontend framework, a message queue. None of it is judged, none of it demonstrates whether attribution works, and every hour spent on it is an hour not spent on the OpSec/CT-pivot capability, which is the part that actually differentiates this submission. If a prompt or a tangent starts drifting toward any of this list, stop and say so instead of building it.
+Auth, multi-tenancy, Docker, monitoring/alerting, autoscaling, real-time streaming ingestion, a custom frontend framework, a message queue. A **thin read-only REST wrapper** (`src/api/`) and free dual deploy (FastAPI + Streamlit) **are in scope** so remote judges can open the product. The API must not contain scoring, extraction, or verdict logic — it calls the same functions the CLI already uses. If a tangent starts drifting toward login walls or a SPA rewrite, stop and say so instead of building it.
 
 ## 10. Priority under time pressure
 

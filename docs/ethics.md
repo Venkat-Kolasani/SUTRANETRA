@@ -12,7 +12,7 @@ The Darknet Market Archives hosted on archive.org are the source corpus. The mar
 
 ## 3. Only our own hidden service is scanned
 
-The OpSec leak scanner’s only Tor target is a hidden service this team creates on localhost, deliberately misconfigured for the demo. `src/opsec/scanner.py` rejects non-localhost targets. We do not scan anyone else’s onion.
+The OpSec leak scanner’s only Tor/HTTP target is a hidden service this team creates on localhost, deliberately misconfigured for the demo. `src/opsec/scanner.py` rejects non-localhost targets. We do not scan anyone else’s onion. The **cloud** investigator console shows **precomputed findings** from that localhost demo — it does not run a live scan against remote judges’ machines or third-party hosts.
 
 ## 4. Certificate Transparency is public by design
 

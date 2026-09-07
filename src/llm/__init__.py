@@ -1,0 +1,1 @@
+"""Shared LLM client (Groq cloud / Ollama local). Phrasing only — never scores."""

@@ -9,12 +9,13 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "src"
-ALLOWED = ("pipeline", "agent")
+ALLOWED = ("pipeline", "agent", "llm")
 BANNED = frozenset(
     {
         "langchain",
         "langchain_core",
         "langchain_ollama",
+        "langchain_groq",
         "langgraph",
         "langgraph.checkpoint",
         "langgraph.graph",
@@ -50,7 +51,7 @@ def test_no_framework_leak_outside_pipeline_and_agent():
         if rel.parts[0] != "agent" and rel not in NEO4J_ALLOWED:
             if "neo4j" in names:
                 neo_leaks.append(str(rel))
-    assert not leaks, "framework leaked outside src/pipeline and src/agent:\n" + "\n".join(leaks)
+    assert not leaks, "framework leaked outside src/pipeline, src/agent, src/llm:\n" + "\n".join(leaks)
     assert not neo_leaks, "neo4j leaked outside src/graph/neo4j_sink.py and src/agent/:\n" + "\n".join(
         neo_leaks
     )
