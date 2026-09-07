@@ -120,6 +120,18 @@ def test_api_health_and_cluster(cloud_env):
     assert body[0]["n_members"] == 2
 
 
+def test_cluster_graph_is_limited_to_selected_cluster(cloud_env):
+    import sqlite3
+
+    from src.graph.build import load_cluster_graph
+
+    with sqlite3.connect(cloud_env) as conn:
+        conn.row_factory = sqlite3.Row
+        graph = load_cluster_graph(conn, "CASE-2026-001", 1, 0.83)
+    assert set(graph.nodes) == {"silkroad1:nihilist23", "silkroad1:nxxxxxxx23"}
+    assert graph.number_of_edges() == 1
+
+
 def test_index_is_website_not_streamlit(cloud_env):
     from fastapi.testclient import TestClient
 
