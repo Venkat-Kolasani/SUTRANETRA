@@ -38,8 +38,9 @@ stylometry:
   embed_batch_size: 64
 
 # Shared model name. Profiles override provider + model.
-# cloud uses Groq; local demo may still use Ollama.
-llm_model: llama-3.3-70b-versatile
+# Groq free-tier catalog (2026-09) no longer lists llama-3.3-70b-versatile;
+# openai/gpt-oss-20b is the local/cloud Groq chat model that this key can call.
+llm_model: openai/gpt-oss-20b
 
 profiles:
   dev:
@@ -50,9 +51,10 @@ profiles:
       password: ""
       database: neo4j
     llm:
+      # yaml default off (pipeline CLI). Local UI: SUTRANETRA_LLM_ENABLED=1 + GROQ_API_KEY.
       enabled: false
-      provider: ollama
-      model: qwen2.5:7b
+      provider: groq
+      model: openai/gpt-oss-20b
 
   demo:
     neo4j:
@@ -78,5 +80,5 @@ profiles:
     llm:
       enabled: true
       provider: groq
-      model: llama-3.3-70b-versatile
+      model: openai/gpt-oss-20b
     api_base_url: ""  # set SUTRANETRA_API_URL in Streamlit secrets

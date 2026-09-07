@@ -739,7 +739,7 @@ This is the start of the **Evidence / Investigation** layer (§1): not a new sco
 
 > `Alias_A` (SilkRoad1, 214 posts) and `Alias_C` (Agora, 88 posts) — **confidence 0.91**. Shared PGP fingerprint `A1B2…9F0` in 3 posts. Shared BTC address `1FTYtw…4PSK`. Stylometric similarity 0.74 (char n-gram). Posting-hour overlap 0.81, both consistent with UTC+1.
 
-Optional LLM polish via `src/llm/client.py` `get_chat_model()`, using **the same profile `llm.model` as §16.2** — never a second model. Local `demo` may use Ollama; `cloud` uses Groq (`llama-3.3-70b-versatile` on the free tier). The function takes the structured evidence dict and rewrites it as an investigator's paragraph. **The LLM never sees raw posts and never decides anything.** It rewrites facts the pipeline already computed. Say that explicitly when a judge asks whether the AI is hallucinating attributions.
+Optional LLM polish via `src/llm/client.py` `get_chat_model()`, using **the same profile `llm.model` as §16.2** — never a second model. Local laptop may use Groq with `GROQ_API_KEY` (same provider as cloud; no deploy required). Prefer `openai/gpt-oss-20b` on the current Groq free catalog; `llama-3.3-70b-versatile` is the older pin and returns `model_not_found` if the account no longer lists it. Local `demo` may use Ollama when offline. `cloud` uses Groq (`openai/gpt-oss-20b` on the current free catalog). Gemini is out of scope — it would be a second provider for the same phrasing job. The function takes the structured evidence dict and rewrites it as an investigator's paragraph. **The LLM never sees raw posts and never decides anything.** It rewrites facts the pipeline already computed. Say that explicitly when a judge asks whether the AI is hallucinating attributions.
 
 If the LLM is unreachable (Ollama down, missing `GROQ_API_KEY`, quota), fall back to the template silently. Do not let a provider failure break the demo.
 
@@ -918,7 +918,7 @@ def opsec_scan(target_url: str) -> list[dict]:
     """Run the misconfiguration scanner against a target. Localhost/demo targets only."""
 ```
 
-Model: `get_chat_model(cfg)` at `temperature=0`. `cloud` uses Groq `llama-3.3-70b-versatile` (`GROQ_API_KEY`). Local `demo` may use `ChatOllama` with `qwen2.5:7b`.
+Model: `get_chat_model(cfg)` at `temperature=0`. Groq uses `openai/gpt-oss-20b` (`GROQ_API_KEY`) — the model this account can call. Local `dev` uses that path when `SUTRANETRA_LLM_ENABLED=1`. Local `demo` may use `ChatOllama` with `qwen2.5:7b` if you want fully offline.
 
 **One model setting serves both this and §14.** Provider + model live under `profiles.<name>.llm`. Two different local models resident at once is an out-of-memory failure on an 8 GB laptop.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from src.explain.reason import template_sentence
@@ -30,7 +31,7 @@ def polish_explanation(evidence: dict[str, Any], cfg: dict | None = None) -> str
         msg = llm.invoke(
             [
                 ("system", _POLISH_SYSTEM),
-                ("human", str(payload)),
+                ("human", json.dumps(payload, default=str)),
             ]
         )
         text = msg.content if isinstance(msg.content, str) else str(msg.content)

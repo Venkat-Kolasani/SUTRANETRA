@@ -1,9 +1,10 @@
-"""One chat model per profile. Cloud = Groq; local demo = Ollama."""
+"""One chat model per profile. Cloud = Groq; local = Groq (API) or Ollama."""
 
 from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -11,9 +12,43 @@ from urllib.request import urlopen
 from src.graph.neo4j_sink import active_profile
 
 OLLAMA_TAGS = "http://127.0.0.1:11434/api/tags"
+_ENV_LOADED = False
+
+
+def load_envfile() -> None:
+    """Load repo `.env` into os.environ without overwriting a real export. No extra dep."""
+    global _ENV_LOADED
+    if _ENV_LOADED:
+        return
+    _ENV_LOADED = True
+    # pytest must not inherit a developer's GROQ/.env or polish tests lie.
+    if os.environ.get("SUTRANETRA_SKIP_DOTENV") == "1":
+        return
+    import sys
+
+    if "pytest" in sys.modules:
+        return
+    seen: set[Path] = set()
+    for root in (Path.cwd(), Path(__file__).resolve().parents[2]):
+        path = (root / ".env").resolve()
+        if path in seen or not path.is_file():
+            continue
+        seen.add(path)
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip().strip("'").strip('"')
+            if key and key not in os.environ:
+                os.environ[key] = val
+
+
+load_envfile()
 
 
 def llm_block(cfg: dict, profile: str | None = None) -> dict[str, Any]:
+    load_envfile()
     name, block = active_profile(cfg, profile)
     llm = dict(block.get("llm") or {})
     provider = (
@@ -28,8 +63,11 @@ def llm_block(cfg: dict, profile: str | None = None) -> dict[str, Any]:
         or "llama-3.3-70b-versatile"
     )
     enabled = bool(llm.get("enabled"))
-    if os.environ.get("SUTRANETRA_LLM_ENABLED") == "0":
+    flag = os.environ.get("SUTRANETRA_LLM_ENABLED")
+    if flag == "0":
         enabled = False
+    elif flag == "1":
+        enabled = True
     return {
         "profile": name,
         "enabled": enabled,

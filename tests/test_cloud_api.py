@@ -109,12 +109,30 @@ def test_api_health_and_cluster(cloud_env):
     client = TestClient(app)
     h = client.get("/health")
     assert h.status_code == 200
-    assert h.json()["ok"] is True
+    body = h.json()
+    assert body["ok"] is True
+    assert "llm" in body
+    assert body["llm"]["provider"] in ("groq", "ollama")
     clusters = client.get("/cases/CASE-2026-001/clusters")
     assert clusters.status_code == 200
     body = clusters.json()
     assert body[0]["cluster_id"] == 1
     assert body[0]["n_members"] == 2
+
+
+def test_index_is_website_not_streamlit(cloud_env):
+    from fastapi.testclient import TestClient
+
+    from src.api.app import app
+
+    r = TestClient(app).get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.headers.get("content-type", "")
+    assert "SUTRANETRA" in r.text
+    assert "streamlit" not in r.text.lower()
+    docs = TestClient(app).get("/docs", follow_redirects=False)
+    assert docs.status_code in (307, 302)
+    assert docs.headers["location"] == "/"
 
 
 def test_agent_groq_down_degrades(cloud_env):

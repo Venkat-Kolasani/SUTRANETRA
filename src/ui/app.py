@@ -60,6 +60,9 @@ STEP_TONE = {
 
 
 def load_config(path: str = "config.yaml") -> dict:
+    from src.llm.client import load_envfile
+
+    load_envfile()
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 

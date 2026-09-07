@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from src.agent.investigator import ask
@@ -15,9 +16,17 @@ from src.agent.tools import open_ro
 from src.api import queries as q
 from src.export.writers import write_clusters_csv, write_report_json, write_report_pdf
 from src.graph.neo4j_sink import active_profile
+from src.llm.client import llm_block, llm_reachable
 from src.llm.polish import polish_explanation
 
-app = FastAPI(title="SUTRANETRA", version="1.0.0")
+app = FastAPI(
+    title="SUTRANETRA",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/openapi.json",
+)
+STATIC = Path(__file__).resolve().parent / "static"
 
 
 def _cfg() -> dict:
@@ -59,12 +68,33 @@ class PolishBody(BaseModel):
     evidence: dict = Field(..., description="Prompt 10 structured evidence dict only")
 
 
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+def index():
+    return FileResponse(STATIC / "index.html")
+
+
+@app.get("/docs", include_in_schema=False)
+def docs_redirect():
+    return RedirectResponse("/", status_code=307)
+
+
 @app.get("/health")
 def health():
     cfg = _cfg()
     name, _ = active_profile(cfg)
     db = _db_path(cfg)
-    return {"ok": True, "profile": name, "db_exists": Path(db).exists()}
+    llm = llm_block(cfg)
+    return {
+        "ok": True,
+        "profile": name,
+        "db_exists": Path(db).exists(),
+        "llm": {
+            "enabled": llm["enabled"],
+            "provider": llm["provider"],
+            "model": llm["model"],
+            "reachable": llm_reachable(cfg),
+        },
+    }
 
 
 @app.get("/cases")

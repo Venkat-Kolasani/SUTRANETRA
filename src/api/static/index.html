@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SUTRANETRA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #070b12;
+      --panel: #121826;
+      --line: rgba(255,255,255,.08);
+      --gold: #c9a227;
+      --gold-soft: #e8d48a;
+      --muted: #8b95a5;
+      --text: #e8edf5;
+      --blue: #3d8bfd;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font-family: "IBM Plex Sans", sans-serif; }
+    a { color: var(--gold-soft); }
+    button, select, input, textarea { font: inherit; }
+    .app { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+    .side { border-right: 1px solid var(--line); padding: 1.2rem; background: #0c111b; }
+    .brand { letter-spacing: .16em; color: var(--gold-soft); font-weight: 700; margin: 0; }
+    .tag { color: var(--muted); font-size: .86rem; margin: .35rem 0 1.2rem; }
+    label { display: block; color: var(--muted); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; margin: .8rem 0 .35rem; }
+    select, input, textarea, button {
+      width: 100%; border-radius: 10px; border: 1px solid var(--line);
+      background: #0a0f18; color: var(--text); padding: .6rem .75rem;
+    }
+    button { cursor: pointer; background: #1a2436; }
+    button.primary { background: var(--blue); border-color: transparent; color: #fff; font-weight: 600; }
+    button.ghost { width: auto; }
+    .main { padding: 1.2rem 1.5rem 2.5rem; max-width: 1320px; }
+    .hero {
+      display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem;
+      padding: .85rem 1.15rem; margin-bottom: .85rem; border: 1px solid rgba(201,162,39,.22);
+      border-radius: 16px; background: linear-gradient(135deg, rgba(18,24,38,.95), rgba(10,14,22,.88));
+    }
+    .hero h1 { font-size: 1.55rem; letter-spacing: .16em; color: var(--gold-soft); margin: 0; }
+    .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: .7rem; }
+    .card { padding: .7rem .85rem; border-radius: 12px; background: rgba(18,24,38,.82); border: 1px solid var(--line); }
+    .metric-label { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+    .metric-value { font-size: 1.12rem; font-weight: 600; }
+    .framing {
+      padding: .65rem .9rem; margin: .7rem 0 .9rem; border-left: 3px solid var(--gold);
+      background: rgba(201,162,39,.07); border-radius: 0 10px 10px 0; color: var(--muted); font-size: .84rem;
+    }
+    .tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; }
+    .tabs button { width: auto; }
+    .tabs button.on { background: rgba(201,162,39,.18); border-color: var(--gold); color: var(--gold-soft); }
+    .row { display: flex; gap: .7rem; flex-wrap: wrap; align-items: end; }
+    .row > * { flex: 1; min-width: 180px; }
+    table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+    th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    .muted { color: var(--muted); }
+    .mono { font-family: "IBM Plex Mono", monospace; font-size: .78rem; }
+    .error { color: #e74c3c; }
+    .quote { padding: .85rem 1rem; border-radius: 12px; background: rgba(61,139,253,.08); border: 1px solid rgba(61,139,253,.18); }
+    .trail-step { display: flex; gap: .8rem; align-items: flex-start; }
+    .trail-badge {
+      width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .trail-connector { width: 2px; height: 14px; margin: 0 0 0 15px; background: rgba(61,139,253,.35); }
+    .exports a { margin-right: .8rem; }
+    iframe.graph { width: 100%; height: 500px; border: 0; border-radius: 12px; background: #111; }
+    .chat { max-width: 900px; }
+    .bubble { margin: .6rem 0; padding: .7rem .85rem; border-radius: 12px; background: var(--panel); }
+    .bubble.q { border: 1px solid rgba(61,139,253,.25); }
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <h2 class="brand">SUTRANETRA</h2>
+      <p class="tag">The eye that follows the hidden threads.</p>
+      <label for="case">Active case</label>
+      <select id="case"></select>
+      <p class="muted" style="font-size:.8rem">Templates and structured views always work. Neo4j / LLM are optional.</p>
+      <p class="muted mono" id="health"></p>
+    </aside>
+    <main class="main">
+      <div id="header"></div>
+      <div class="tabs" id="tabs"></div>
+      <section id="view"></section>
+    </main>
+  </div>
+  <script>
+    const FRAMING = "Handles, wallets, and PGP fingerprints are pseudonymous identifiers. SUTRANETRA reports correlation confidence, not an identity verdict.";
+    const DEMO_PGP = "0551E07ABB21CA0F02FBFBECE8ED5F45C33DD26D";
+    const VIEWS = ["Search", "Clusters", "Pair inspector", "Evidence Trail", "OpSec", "Investigator"];
+    const TONE = {
+      alias: ["◆", "#c9a227"], post: ["▸", "#3d8bfd"], evidence: ["⬡", "#2ecc71"],
+      score: ["◎", "#e8d48a"], opsec: ["⚠", "#e74c3c"], ct_cert: ["▣", "#9b59b6"], ct_domain: ["↗", "#e67e22"],
+    };
+    const state = { cases: [], case: null, view: "Search", aliases: [], clusters: [] };
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const fmt = (n) => (n == null || n === "" ? "—" : Number(n).toLocaleString());
+    const num = (n, d = 3) => (n == null || n === "" ? "—" : Number(n).toFixed(d));
+
+    async function api(path, opts) {
+      const r = await fetch(path, opts);
+      if (!r.ok) throw new Error(`${r.status} ${path}`);
+      const ct = r.headers.get("content-type") || "";
+      return ct.includes("application/json") ? r.json() : r.text();
+    }
+
+    function table(rows, keys) {
+      if (!rows || !rows.length) return `<p class="muted">None.</p>`;
+      const cols = keys || Object.keys(rows[0]);
+      return `<div style="overflow:auto"><table><thead><tr>${cols.map((k) => `<th>${esc(k)}</th>`).join("")}</tr></thead><tbody>${
+        rows.map((row) => `<tr>${cols.map((k) => `<td class="mono">${esc(Array.isArray(row[k]) ? row[k].join(", ") : row[k])}</td>`).join("")}</tr>`).join("")
+      }</tbody></table></div>`;
+    }
+
+    function renderHeader() {
+      const c = state.case || {};
+      const snap = c.corpus_snapshot || {};
+      $("header").innerHTML = `
+        <div class="hero">
+          <div>
+            <h1>SUTRANETRA</h1>
+            <p class="tag" style="margin:0.15rem 0 0">The eye that follows the hidden threads.</p>
+          </div>
+          <div class="muted">case ${esc(c.case_id)} · ${esc(c.status)}</div>
+        </div>
+        <div class="metrics">
+          <div class="card"><div class="metric-label">Threshold</div><div class="metric-value">${esc(c.threshold)}</div></div>
+          <div class="card"><div class="metric-label">Model</div><div class="metric-value" style="font-size:.92rem">${esc(c.model_version)}</div></div>
+          <div class="card"><div class="metric-label">Corpus</div><div class="metric-value">${fmt(snap.n_posts)} posts</div></div>
+          <div class="card"><div class="metric-label">Aliases</div><div class="metric-value">${fmt(snap.n_aliases)}</div></div>
+          <div class="card"><div class="metric-label">Markets</div><div class="metric-value">${(snap.markets || []).length}</div></div>
+        </div>
+        <div class="framing">${esc(FRAMING)}</div>
+        <p class="muted">config_hash ${esc((c.config_hash || "").slice(0, 12))}… · ${esc((snap.markets || []).join(", "))}</p>
+      `;
+      $("tabs").innerHTML = VIEWS.map((v) => `<button data-view="${v}" class="${v === state.view ? "on" : ""}">${v}</button>`).join("");
+      $("tabs").onclick = (e) => {
+        const v = e.target.dataset.view;
+        if (!v) return;
+        state.view = v;
+        renderHeader();
+        renderView();
+      };
+    }
+
+    function exports() {
+      const id = state.case.case_id;
+      return `<p class="exports muted">Case exports:
+        <a href="/cases/${id}/export/csv">clusters.csv</a>
+        <a href="/cases/${id}/export/json">report.json</a>
+        <a href="/cases/${id}/export/pdf">report.pdf</a>
+      </p>`;
+    }
+
+    async function renderView() {
+      const view = $("view");
+      view.innerHTML = `<p class="muted">Loading…</p>`;
+      const id = state.case.case_id;
+      try {
+        if (state.view === "Search") return renderSearch(view, id);
+        if (state.view === "Clusters") return renderClusters(view, id);
+        if (state.view === "Pair inspector") return renderPair(view, id);
+        if (state.view === "Evidence Trail") return renderTrail(view, id);
+        if (state.view === "OpSec") return renderOpsec(view, id);
+        return renderInvestigator(view, id);
+      } catch (err) {
+        view.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+      }
+    }
+
+    function renderSearch(view, id) {
+      view.innerHTML = `
+        <h3>Evidence search</h3>
+        <p class="muted">Full-text over extracted evidence and posts, with archive-member lineage.</p>
+        <div class="row">
+          <div><label>Query</label><input id="q" placeholder="PGP fingerprint, BTC address, onion, or handle" /></div>
+        </div>
+        <div class="row" style="margin:.7rem 0">
+          <button class="ghost" id="demo">Load example PGP fingerprint</button>
+          <button class="primary" id="go">Search</button>
+        </div>
+        <div id="hits"></div>
+        ${exports()}
+      `;
+      const run = async () => {
+        const q = $("q").value.trim();
+        if (!q) { $("hits").innerHTML = `<p class="muted">Search a handle, wallet, PGP fingerprint, onion, or clearnet domain.</p>`; return; }
+        $("hits").innerHTML = `<p class="muted">Searching…</p>`;
+        const rows = await api(`/cases/${id}/search?q=${encodeURIComponent(q)}`);
+        $("hits").innerHTML = `<p>${rows.length} hits</p>` + table(rows, ["hit_type", "kind", "market", "alias", "value", "source_archive", "scrape_date", "source_member_path", "content_sha256"]);
+      };
+      $("demo").onclick = () => { $("q").value = DEMO_PGP; run(); };
+      $("go").onclick = run;
+      $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+    }
+
+    async function renderClusters(view, id) {
+      const clusters = await api(`/cases/${id}/clusters`);
+      state.clusters = clusters;
+      const preferred = clusters.find((c) => c.cluster_id === 1) || clusters.find((c) => c.n_markets >= 3) || clusters[0];
+      view.innerHTML = `
+        <h3>Actor clusters</h3>
+        <p class="muted">${clusters.length} clusters. Orange edges in the graph are cross-market.</p>
+        <label>Select cluster</label>
+        <select id="cluster">${clusters.map((c) =>
+          `<option value="${c.cluster_id}" ${c.cluster_id === preferred?.cluster_id ? "selected" : ""}>#${c.cluster_id} · ${c.n_members} aliases · ${c.n_markets} markets · conf ${Number(c.confidence).toFixed(2)}</option>`
+        ).join("")}</select>
+        <div id="cdetail" style="margin-top:1rem"></div>
+        ${exports()}
+      `;
+      const load = async () => {
+        const cid = $("cluster").value;
+        $("cdetail").innerHTML = `<p class="muted">Loading cluster ${esc(cid)}…</p>`;
+        const p = await api(`/cases/${id}/clusters/${cid}`);
+        $("cdetail").innerHTML = `
+          <h4>Members</h4>${table(p.members)}
+          <h4>Shared evidence (with lineage)</h4>${table(p.shared)}
+          <h4>Cluster graph</h4>
+          <iframe class="graph" title="cluster graph"></iframe>
+        `;
+        const frame = $("cdetail").querySelector("iframe");
+        frame.srcdoc = p.graph_html || "<p style='color:#8b95a5;padding:1rem;font-family:sans-serif'>No graph.</p>";
+      };
+      $("cluster").onchange = load;
+      if (preferred) load();
+    }
+
+    async function renderPair(view, id) {
+      const aliases = await api(`/cases/${id}/aliases`);
+      state.aliases = aliases;
+      const a0 = aliases.find((a) => a.label.endsWith(":nihilist23")) || aliases[0];
+      const b0 = aliases.find((a) => a.label.endsWith(":nxxxxxxx23")) || aliases[1];
+      const opts = (sel) => aliases.map((a) => `<option value="${a.alias_id}" ${a.alias_id === sel?.alias_id ? "selected" : ""}>${esc(a.label)}</option>`).join("");
+      view.innerHTML = `
+        <h3>Pair inspector</h3>
+        <div class="row">
+          <div><label>Alias A</label><select id="a">${opts(a0)}</select></div>
+          <div><label>Alias B</label><select id="b">${opts(b0)}</select></div>
+        </div>
+        <div id="pdetail" style="margin-top:1rem"></div>
+        ${exports()}
+      `;
+      const load = async () => {
+        const a = $("a").value, b = $("b").value;
+        $("pdetail").innerHTML = `<p class="muted">Scoring pair…</p>`;
+        const p = await api(`/cases/${id}/pairs?a_alias_id=${a}&b_alias_id=${b}`);
+        const s = p.scores || {};
+        $("pdetail").innerHTML = `
+          <div class="metrics">
+            <div class="card"><div class="metric-label">S_char</div><div class="metric-value">${num(s.s_char)}</div></div>
+            <div class="card"><div class="metric-label">S_embed</div><div class="metric-value">${num(s.s_embed)}</div></div>
+            <div class="card"><div class="metric-label">S_hard</div><div class="metric-value">${num(s.s_hard)}</div></div>
+            <div class="card"><div class="metric-label">S_time</div><div class="metric-value">${s.s_time == null ? "—" : num(s.s_time)}</div></div>
+            <div class="card"><div class="metric-label">Confidence</div><div class="metric-value">${num(s.confidence)}</div></div>
+          </div>
+          <h4>Generated explanation</h4>
+          <div class="quote">${esc(p.sentence)}</div>
+          <h4>Shared evidence with post context and lineage</h4>
+          ${table(p.detail)}
+        `;
+      };
+      $("a").onchange = load;
+      $("b").onchange = load;
+      load();
+    }
+
+    async function renderTrail(view, id) {
+      if (!state.clusters.length) state.clusters = await api(`/cases/${id}/clusters`);
+      const preferred = state.clusters.find((c) => c.cluster_id === 1) || state.clusters[0];
+      view.innerHTML = `
+        <h3>Evidence Trail</h3>
+        <p class="muted">Deterministic chain from stored evidence. Missing OpSec/CT steps are omitted, never invented.</p>
+        <label>Cluster</label>
+        <select id="tcluster">${state.clusters.map((c) =>
+          `<option value="${c.cluster_id}" ${c.cluster_id === preferred?.cluster_id ? "selected" : ""}>#${c.cluster_id} · ${c.n_members} aliases</option>`
+        ).join("")}</select>
+        <div id="tdetail" style="margin-top:1rem"></div>
+        ${exports()}
+      `;
+      const load = async () => {
+        const cid = $("tcluster").value;
+        const steps = await api(`/cases/${id}/trail?cluster_id=${cid}`);
+        $("tdetail").innerHTML = steps.map((step, i) => {
+          const [icon, color] = TONE[step.type] || ["•", "#8b95a5"];
+          const meta = step.type === "post"
+            ? `<div class="muted mono">${esc(step.source_archive)} / ${esc(step.scrape_date)} / ${esc(step.source_member_path)}<br>sha256 ${esc(step.content_sha256)}</div>`
+            : "";
+          const conn = i < steps.length - 1 ? `<div class="trail-connector"></div>` : "";
+          return `<div class="trail-step"><div class="trail-badge" style="color:${color};border:1px solid ${color}33;background:${color}22">${icon}</div>
+            <div><div class="mono" style="color:${color};letter-spacing:.12em;text-transform:uppercase;font-size:.66rem">${esc(step.type)}</div>
+            <div>${esc(step.label)}</div>${meta}</div></div>${conn}`;
+        }).join("") || `<p class="muted">No trail.</p>`;
+      };
+      $("tcluster").onchange = load;
+      if (preferred) load();
+    }
+
+    async function renderOpsec(view, id) {
+      const findings = await api(`/cases/${id}/opsec`);
+      const sibs = findings.filter((f) => f.finding_kind === "ct_sibling").map((f) => f.value);
+      view.innerHTML = `
+        <h3>OpSec findings</h3>
+        <p class="muted">Stored results from the localhost demo scan. Live scanning stays on the CLI / local tools.</p>
+        <p>${findings.length} rows</p>
+        ${table(findings, ["finding_kind", "value", "target", "detail", "created_at"])}
+        ${sibs.length ? `<h4>CT sibling domains</h4><p class="mono">${esc(sibs.slice(0, 12).join(", "))}</p>` : ""}
+        ${exports()}
+      `;
+    }
+
+    function renderInvestigator(view, id) {
+      view.innerHTML = `
+        <h3>Investigator</h3>
+        <p class="muted">Natural-language query over stored results. The model does not score aliases and does not issue identity verdicts.</p>
+        <div class="chat" id="chat"></div>
+        <label>Question</label>
+        <textarea id="question" rows="3" placeholder="Walk me through the evidence trail for this cluster…"></textarea>
+        <button class="primary" id="ask" style="margin-top:.7rem">Ask</button>
+      `;
+      const chat = $("chat");
+      $("ask").onclick = async () => {
+        const question = $("question").value.trim();
+        if (!question) return;
+        chat.insertAdjacentHTML("beforeend", `<div class="bubble q"><strong>You</strong><div>${esc(question)}</div></div>`);
+        $("question").value = "";
+        try {
+          const ans = await api("/agent/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ case_id: id, question }),
+          });
+          const text = ans.degraded ? (ans.text || "LLM unreachable — templates and structured views still work.") : ans.text;
+          chat.insertAdjacentHTML("beforeend", `<div class="bubble"><strong>SUTRANETRA</strong> <span class="muted">${esc(ans.model || "")}</span><div>${esc(text)}</div></div>`);
+        } catch (err) {
+          chat.insertAdjacentHTML("beforeend", `<div class="bubble error">${esc(err.message)}</div>`);
+        }
+      };
+    }
+
+    async function boot() {
+      const h = await api("/health");
+      $("health").textContent = `profile ${h.profile} · db ${h.db_exists ? "ok" : "missing"}`;
+      state.cases = await api("/cases");
+      const sel = $("case");
+      sel.innerHTML = state.cases.map((c) => `<option value="${esc(c.case_id)}">${esc(c.case_id)} · ${esc(c.status)}</option>`).join("");
+      const first = state.cases.find((c) => c.case_id === "CASE-2026-001") || state.cases[0];
+      sel.value = first.case_id;
+      const loadCase = async () => {
+        state.case = await api(`/cases/${sel.value}`);
+        state.clusters = [];
+        renderHeader();
+        renderView();
+      };
+      sel.onchange = loadCase;
+      await loadCase();
+    }
+    boot().catch((err) => { $("view").innerHTML = `<p class="error">${esc(err.message)}</p>`; });
+  </script>
+</body>
+</html>

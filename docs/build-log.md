@@ -413,5 +413,31 @@ Copy this block for each prompt:
 - **DoD:** in-repo tests. Public URLs need `GROQ_API_KEY` plus packed `data/demo/attrib.sqlite` (do not upload the ~4.4 GB full DB).
 - **Tests:** `tests/test_cloud_api.py`; framework-leak allows `src/llm/`, forbids langchain in `src/api/`.
 
+### 2026-09-07 — prompts/16-llm-explanation-polish.md
 
+- **Status:** complete
+- **Profile:** demo for live polish (`llm.enabled: true`, `provider: ollama`, `model: qwen2.5:7b`). Default `dev` still leaves polish off (silent template).
+- **What shipped:** `src/llm/polish.py` `polish_explanation(evidence, cfg)` — Prompt 10 dict only, `get_chat_model(cfg)` (same helper as Prompt 15), JSON payload with `template_sentence` stripped, silent `template_sentence` fallback. Pair inspector / API already call it. Dedicated `tests/test_polish.py`.
+- **Commands:** unit checks via `_pytest.monkeypatch.MonkeyPatch` on `tests/test_polish.py` + `tests/test_reason.py` (pytest CLI hangs on this iCloud-hosted `.venv` while scanning package entry points). Live rewrite: Ollama `qwen2.5:7b` at `127.0.0.1:11434`, temperature 0, through `polish_explanation` (ChatOllama import itself timed out on iCloud `pydantic` plugin/`entry_points.txt` reads; HTTP chat client used as the invoke backend for the live pass). Fallback: `OLLAMA_TAGS=http://127.0.0.1:1/api/tags`.
+- **DoD:**
+  - Live polish, Prompt 10 pairs on `CASE-2026-001` (sparse-gated confidence is now **0.35**, not the pre-Prompt-12 0.82):
+    1. `nihilist23` / `nxxxxxxx23` (silkroad1, 2 / 1 posts). Template: confidence 0.35, reason insufficient data, PGP `0551E0…D26D` in 3 posts, S_char 0.47. Polished paragraph kept aliases, market, post counts, **0.35**, full PGP `0551E07ABB21CA0F02FBFBECE8ED5F45C33DD26D`, “insufficient data”, framing (pseudonymous / no verdict). **Omitted** S_char 0.47 (omission, not a new fact). No extra alias/wallet/domain.
+    2. `0shit` / `AlexTrusk` (cannabisroad3, 1 / 1 posts). Template: confidence 0.35, insufficient data, S_char 0.00, no PGP. Polished kept both handles, market, post counts, **0.35**, insufficient-data, framing. **Omitted** S_char 0.00. No invented PGP/wallets.
+  - Signature: `(evidence: dict[str, Any], cfg: dict | None = None)`. AST: no `src.ingest`, no `sqlite3`, no `posts`. Payload is the structured dict minus `template_sentence`.
+  - Unreachable endpoint → **exact** Prompt 10 `template_sentence`; `cfg=None` → same. Pair inspector renders the sentence with no “LLM unavailable” banner.
+  - Shared model: both `polish.py` and `investigator.py` call `get_chat_model`; demo `llm_block` model **`qwen2.5:7b`**. No second `ChatOllama(` in polish.
+  - Same-session memory: after both polishes `ollama ps` showed **one** `qwen2.5:7b` (4.9 GB, 100% GPU). Python max RSS **~33 MB**. Did not load `llama3.2`. Investigator not invoked in-process this session because `from langchain.agents import create_agent` hung on iCloud site-packages; it uses the same `get_chat_model` / same Ollama model, so it cannot load a second local model.
+- **Tests:** `test_unreachable_llm_returns_exact_template` pass; `test_llm_exception_returns_exact_template` pass; `test_signature_is_structured_dict_only` pass; `test_shares_llm_model_with_investigator` pass; `test_reason.py` 1 pass. No skips.
+- **Issues / near-misses:** Prompt 10’s quoted 0.82 on this pair is obsolete after the Prompt 12 sparse gate (`reason=insufficient data`, confidence 0.35) — polish must quote the stored score. `pytest` on the iCloud repo path hangs collecting plugins; run the test functions directly. `ChatOllama` import can timeout on iCloud `.venv` (`TimeoutError` reading `entry_points.txt`); `PYDANTIC_DISABLE_PLUGINS=1` is the workaround. Live rewrite used the Ollama HTTP `/api/chat` backend inside `polish_explanation.invoke` for that reason — same model, temperature 0, same system prompt.
+- **Judge/interview notes:** The LLM never sees posts or a DB handle. If Ollama is down, the pair inspector still shows the template sentence and looks identical. Confidence is whatever fusion already stored.
+
+### 2026-09-08 — local Groq LLM (not a build prompt)
+
+- **Status:** complete for local laptop; no deploy
+- **Profile:** `dev` yaml still `llm.enabled: false`; turn on with `.env` `SUTRANETRA_LLM_ENABLED=1` + `GROQ_API_KEY`
+- **Choice:** **Groq** (`llama-3.3-70b-versatile`), not Gemini. Already in SPEC §14/§16.2 and `get_chat_model`; Gemini would be a second unused provider.
+- **What shipped:** `.env` loader in `src/llm/client.py` (skip under pytest); `SUTRANETRA_LLM_ENABLED=1` override; `dev` provider groq; `/health` reports `llm`; README local uvicorn + streamlit
+- **Start:** `uvicorn src.api.app:app --host 127.0.0.1 --port 8000` and optional `streamlit run src/ui/app.py`
+- **Fallback:** missing key → template polish, investigator `degraded=True` (no UI banner on polish)
+- **Verify 2026-09-08:** `.env` Groq key is set (`gsk_…`, 56 chars). Live chat: `llama-3.3-70b-versatile` → `model_not_found`. This key’s catalog has no Llama 3.3. `openai/gpt-oss-20b` returned `groq-ok` (HTTP 200). Switched local/cloud pin to that model.
 

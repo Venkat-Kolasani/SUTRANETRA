@@ -1,1 +1,1 @@
-"""Shared LLM client (Groq cloud / Ollama local). Phrasing only — never scores."""
+"""Shared LLM client (Groq locally or cloud / optional Ollama). Phrasing only."""

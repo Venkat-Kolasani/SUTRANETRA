@@ -32,7 +32,24 @@ python -m src.ingest.schema
 
 This creates `data/db/attrib.sqlite` with the full corpus + cases schema (`posts`, `aliases`, `evidence`, `cases`, `pair_scores`, `clusters`, `opsec_findings`). Re-running the command is safe (idempotent).
 
-Configuration lives in `config.yaml` (`dev` profile by default: Neo4j and LLM polish off). Use `SUTRANETRA_PROFILE=cloud` for the public judge path.
+Configuration lives in `config.yaml` (`dev` profile by default: Neo4j off, LLM polish off in yaml). For a local Groq LLM (investigator + explanation polish, no deploy): copy `.env.example` to `.env`, set `GROQ_API_KEY` and `SUTRANETRA_LLM_ENABLED=1`. Use `SUTRANETRA_PROFILE=cloud` only for the public judge path later.
+
+## Local website + LLM (no deploy)
+
+```bash
+cp .env.example .env   # paste GROQ_API_KEY from https://console.groq.com
+source .venv/bin/activate
+pip install -r requirements-agent.txt -r requirements-api.txt -r requirements-ui.txt
+
+# terminal 1 — API + built-in site
+uvicorn src.api.app:app --host 127.0.0.1 --port 8000
+# open http://127.0.0.1:8000   GET /health should show llm.reachable true
+
+# terminal 2 — optional Streamlit console (same .env)
+streamlit run src/ui/app.py
+```
+
+Missing key → templates still work; investigator degrades to structured search. No Gemini: Groq is the SPEC provider and already in `src/llm/client.py`.
 
 ## Cloud (free, remote judges)
 
@@ -44,6 +61,8 @@ Pipeline stays local/CLI. Cloud serves a **read-only precomputed case**.
 
 See `.env.example` and `render.yaml`. Never commit API keys.
 
-Local UI (direct SQLite): `streamlit run src/ui/app.py`.
+Local website (FastAPI, no Streamlit): `uvicorn src.api.app:app --host 127.0.0.1 --port 8000` then open http://127.0.0.1:8000.
+
+Streamlit remains the optional cloud frontend: `streamlit run src/ui/app.py`.
 
 Full technical specification: `SPEC.md`.
