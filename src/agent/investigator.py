@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,26 @@ from src.llm.client import get_chat_model, llm_block, llm_reachable, ollama_reac
 
 # Re-export for older UI/tests.
 __all__ = ["ask", "ollama_reachable"]
+log = logging.getLogger(__name__)
+
+
+def _message_text(content: Any) -> str:
+    if not content:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str) and block.strip():
+                parts.append(block)
+            elif isinstance(block, dict):
+                if block.get("type") in (None, "text") and block.get("text"):
+                    parts.append(str(block["text"]))
+            elif getattr(block, "type", None) in (None, "text") and getattr(block, "text", None):
+                parts.append(str(block.text))
+        return "\n".join(parts).strip()
+    return str(content).strip()
 
 SYSTEM = """You are SUTRANETRA's investigator console.
 
@@ -113,6 +134,7 @@ def ask(
             {"recursion_limit": 6},
         )
     except Exception:
+        log.exception("investigator ask failed")
         return {
             "ok": False,
             "degraded": True,
@@ -126,8 +148,9 @@ def ask(
     text = ""
     for m in messages:
         if isinstance(m, AIMessage):
-            if m.content:
-                text = m.content if isinstance(m.content, str) else str(m.content)
+            chunk = _message_text(m.content)
+            if chunk:
+                text = chunk
             for call in m.tool_calls or []:
                 pending[call["id"]] = {"name": call["name"], "args": call.get("args") or {}}
         elif isinstance(m, ToolMessage):
